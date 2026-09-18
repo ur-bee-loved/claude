@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.omniconv.Omniconv</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Omniconv</name>
+  <summary>Convert files between hundreds of formats</summary>
+  <description>
+    <p>Omniconv is a desktop file converter for Linux. It orchestrates the conversion tools already on your system (ffmpeg, ImageMagick, Ghostscript, LibreOffice, pandoc, calibre, poppler and several Python libraries) behind one drag-and-drop window and one command line.</p>
+    <p>When no single tool handles a conversion, Omniconv chains several: a Word document becomes a PNG through PDF, a HEIC photo becomes an icon through PNG.</p>
+  </description>
+  <launchable type="desktop-id">io.github.omniconv.Omniconv.desktop</launchable>
+  <provides><binary>omniconv</binary></provides>
+  <categories><category>Utility</category><category>Graphics</category><category>AudioVideo</category></categories>
+  <content_rating type="oars-1.1"/>
+</component>
