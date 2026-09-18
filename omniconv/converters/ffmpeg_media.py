@@ -466,3 +466,57 @@ def probe(path: Path) -> dict:
         return json.loads(out.stdout.decode("utf-8", "replace"))
     except ValueError:
         return {}
+
+
+_SLIDESHOW_SOURCES = ("png", "jpeg", "bmp", "tiff", "webp", "gif", "ppm", "pgm", "tga", "pam", "dpx", "exr", "qoi", "sgi", "pcx", "jp2")
+
+
+@converter(
+    "ffmpeg-slideshow",
+    _SLIDESHOW_SOURCES,
+    _video_targets,
+    requires=(FFMPEG,),
+    cost=14,
+    many_to_one=True,
+    options=("fps", "width", "height", "crf", "video_bitrate", "video_codec"),
+    description="Turn a sequence of images into a video or animation (--fps frames per second, default 1)",
+)
+def ffmpeg_slideshow(job: Job) -> list[Path]:
+    exe = FFMPEG.path()
+    assert exe
+    tgt = job.tgt_format.name
+    muxer, vencs, _ = VIDEO_TARGETS[tgt]
+    vcodec = job.opt("video_codec") or _pick(vencs)
+    if vcodec is None:
+        raise ConversionError(f"no video encoder available for {tgt}")
+    fps = float(job.opt("fps") or 1)
+    # The concat demuxer takes a list file; each image is shown for 1/fps seconds.
+    listing = job.workdir / "slides.txt"
+    lines = []
+    for src in job.sources:
+        escaped = str(src.resolve()).replace("'", "'\\''")
+        lines.append(f"file '{escaped}'")
+        lines.append(f"duration {1 / fps}")
+    if job.sources:
+        lines.append(f"file '{str(job.sources[-1].resolve()).replace(chr(39), chr(39) + chr(92) + chr(39) + chr(39))}'")
+    listing.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    w, h = job.opt("width") or 1280, job.opt("height") or 720
+    filters = [f"scale={int(w)}:{int(h)}:force_original_aspect_ratio=decrease", f"pad={int(w)}:{int(h)}:(ow-iw)/2:(oh-ih)/2", "setsar=1", f"fps={max(fps, 1)}"]
+    if tgt == "gif":
+        filters.append("split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse")
+    cmd = [exe, "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(listing)]
+    cmd += ["-filter_complex" if tgt == "gif" else "-vf", ",".join(filters)]
+    cmd += ["-c:v", vcodec, "-an"]
+    if vcodec in ("libx264", "libx265"):
+        cmd += ["-pix_fmt", "yuv420p", "-crf", str(int(job.opt("crf") or 23))]
+    elif vcodec in ("libvpx-vp9", "libvpx"):
+        cmd += ["-crf", str(int(job.opt("crf") or 32)), "-b:v", "0"]
+    if job.opt("video_bitrate"):
+        cmd += ["-b:v", str(job.opt("video_bitrate"))]
+    if tgt in ("gif", "apng", "webp"):
+        cmd += ["-loop", "0"]
+    if tgt in ("mp4", "mov", "f4v"):
+        cmd += ["-movflags", "+faststart"]
+    cmd += ["-f", muxer, str(job.target)]
+    run(cmd)
+    return [job.target]

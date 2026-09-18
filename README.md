@@ -112,6 +112,7 @@ omniconv in.png out.webp                                 # shortcut form
 
 omniconv merge a.png b.jpg c.pdf -o bundle.pdf
 omniconv merge part1.mp4 part2.mp4 -o joined.mp4
+omniconv merge frame*.png -o slideshow.mp4 --fps 2            # image sequence to video
 omniconv merge report.md figure.png -o report.zip
 
 omniconv formats                    # every format with an installed backend
