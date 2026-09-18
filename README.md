@@ -177,11 +177,18 @@ which then run `doctor` themselves. The three Windows-only bugs this
 surfaced (a replace of a file MuPDF still held open, `PATHEXT` casing in a
 test, and the same `.EXE` spelling in path comparisons) are fixed.
 
-Not yet verified: the winget, scoop and Chocolatey package identifiers
-were only exercised in the dry run, so a wrong identifier would show up as
-one failed install rather than a script failure; the Inno Setup script has
-not been compiled; and nothing has run on a Windows desktop with a
-display, only on the headless runner.
+The winget and Chocolatey identifiers in `install-deps.ps1` are checked
+against the live catalogues by `install-deps.ps1 -CheckIds`, which the CI
+job runs; every identifier resolves. Two tools are not in those catalogues
+and are left to scoop: FluidSynth (not on winget) and potrace (not on
+Chocolatey). Ghostscript was not found on winget's community source at
+all, so the installer obtains it through scoop or Chocolatey and otherwise
+points at the ghostscript.com download. The scoop names were not
+checked, because scoop is not on the runner.
+
+Not yet verified: the Inno Setup script has not been compiled, and
+nothing has run on a Windows desktop with a display, only on the headless
+runner.
 
 ## Usage
 

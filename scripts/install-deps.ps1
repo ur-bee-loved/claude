@@ -55,7 +55,7 @@ $ErrorActionPreference = "Continue"
 $Table = @'
 ffmpeg||Gyan.FFmpeg|ffmpeg|ffmpeg
 magick|%ProgramFiles%\ImageMagick*\magick.exe|ImageMagick.ImageMagick|imagemagick|imagemagick
-gswin64c,gswin32c|%ProgramFiles%\gs\gs*\bin\gswin64c.exe|ArtifexSoftware.GhostScript,ArtifexSoftware.Ghostscript|ghostscript|ghostscript
+gswin64c,gswin32c|%ProgramFiles%\gs\gs*\bin\gswin64c.exe|-|ghostscript|ghostscript
 pdftoppm|%LOCALAPPDATA%\Microsoft\WinGet\Packages\*Poppler*\*\Library\bin\pdftoppm.exe|oschwartz10612.Poppler|poppler|poppler
 pandoc|%LOCALAPPDATA%\Pandoc\pandoc.exe;%ProgramFiles%\Pandoc\pandoc.exe|JohnMacFarlane.Pandoc|pandoc|pandoc
 soffice|%ProgramFiles%\LibreOffice\program\soffice.exe|TheDocumentFoundation.LibreOffice|extras/libreoffice|libreoffice-fresh
@@ -164,6 +164,10 @@ function Suggest-PackageId([string]$m, [string]$id) {
                 foreach ($l in ($out -split "`n")) {
                     if ($l -match "\s(\S+\.\S+)\s+\S+\s+winget\s*$") { $found += $matches[1] }
                 }
+                if ($found.Count -eq 0) {
+                    $raw = ($out -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 3) -join " / "
+                    return $(if ($raw) { "no match; search said: $raw" } else { "" })
+                }
                 return ($found | Select-Object -First 3) -join ", "
             }
             "choco" {
@@ -226,7 +230,10 @@ foreach ($line in $Table -split "`n") {
         $missing += ,@($probe, $ids)
         $avail = ($managers | Where-Object { $ids[$_] -ne "-" -and $ids[$_] } | ForEach-Object { "$_`:$($ids[$_].Replace(',', ' or '))" }) -join ", "
         if ($avail) { Write-Host ("  missing  {0,-14} -> {1}" -f $short, $avail) }
-        else { Write-Host ("  skipped  {0} (no package in {1})" -f $short, ($managers -join "/")) }
+        else {
+            Write-Host ("  skipped  {0} (no package in {1})" -f $short, ($managers -join "/"))
+            if ($short -eq "gswin64c") { Write-Host "           Ghostscript is not on winget; install it with scoop or Chocolatey, or from https://ghostscript.com/releases/" }
+        }
     }
 }
 
