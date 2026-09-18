@@ -1,9 +1,10 @@
 # Omniconv
 
-Omniconv is a native Linux file converter. It has a GTK 4 / libadwaita
-desktop window and an equivalent command line, and it converts between
-image, vector, audio, video, subtitle, document (including PDF), e-book,
-structured-data, archive and font formats.
+Omniconv is a native desktop file converter for Linux and Windows. On Linux
+it has a GTK 4 / libadwaita window; on Windows (and macOS) it has a Qt 6
+window with the same layout; both share one command line. It converts
+between image, vector, audio, video, subtitle, document (including PDF),
+e-book, structured-data, archive, font and 3D-model formats.
 
 It does not reimplement any codec. Instead it orchestrates the conversion
 tools that already exist on a Linux system (ffmpeg, ImageMagick,
@@ -20,12 +21,13 @@ source-to-target pairs. Those numbers depend entirely on what is installed;
 ## Contents
 
 1. [Installation](#installation)
-2. [Usage](#usage)
-3. [How it works](#how-it-works)
-4. [Supported formats](#supported-formats)
-5. [Options](#options)
-6. [Known limitations](#known-limitations)
-7. [Development](#development)
+2. [Windows](#windows)
+3. [Usage](#usage)
+4. [How it works](#how-it-works)
+5. [Supported formats](#supported-formats)
+6. [Options](#options)
+7. [Known limitations](#known-limitations)
+8. [Development](#development)
 
 ## Installation
 
@@ -106,12 +108,75 @@ without them.
 | antiword, catdoc, odt2txt, docx2txt, unrtf, Gnumeric | lightweight text extraction and spreadsheet conversion |
 | dcraw, darktable, RawTherapee | camera RAW development |
 
+## Windows
+
+Omniconv runs on Windows 10 and 11 with the same core, the same command
+line and a Qt 6 window that mirrors the Linux one. Qt draws the native
+Windows controls and follows the system light or dark setting.
+
+### Install from source
+
+```powershell
+git clone https://github.com/ur-bee-loved/claude omniconv
+cd omniconv
+powershell -ExecutionPolicy Bypass -File scripts\install-deps.ps1 -DryRun   # preview
+powershell -ExecutionPolicy Bypass -File scripts\install-deps.ps1           # install tools
+python -m pip install --user ".[windows]"
+omniconv doctor
+omniconv-gui
+```
+
+`install-deps.ps1` uses winget (built into Windows 10 and 11), then scoop,
+then Chocolatey, for each tool that is not already present. It never stops
+on one failed package. Microsoft Edge, present on every Windows
+installation, serves as the headless browser for HTML rendering, so no
+browser is installed. Open a new terminal after it finishes so `PATH`
+changes take effect.
+
+Tools installed under *Program Files* without a `PATH` entry (LibreOffice,
+calibre, Ghostscript, Tesseract, 7-Zip, Inkscape, Graphviz, MiKTeX) are
+found anyway: Omniconv checks the usual install directories, the package
+managers' shim folders, MSYS2, and the Windows *App Paths* registry.
+
+### Stand-alone build
+
+`packaging\windows\build.ps1` produces `dist\Omniconv\` with
+`Omniconv.exe` (the window, no console) and `omniconv.exe` (the command
+line) using PyInstaller, and when Inno Setup is installed also
+`dist\Omniconv-Setup.exe`, an installer with Start Menu and desktop
+shortcuts, an optional `PATH` entry, an Explorer *Send to* entry and an
+offer to run the dependency installer. The GitHub Actions workflow builds
+the same executables on every pull request and attaches them as the
+`Omniconv-windows` artifact.
+
+### Windows-specific behaviour
+
+- Ghostscript's console binary is `gswin64c.exe`; Omniconv maps `gs` to it.
+- ImageMagick 6's `convert` is never used on Windows because
+  `C:\Windows\System32\convert.exe` is the NTFS filesystem converter.
+- LibreOffice is driven through `soffice.com`, which waits for the
+  conversion to finish, rather than `soffice.exe`, which may return early.
+- External tools run without flashing a console window.
+- `img2pdf`, `scour` and `ocrmypdf` are installed through pip, since they
+  are Python programs; `ocrmypdf` still needs Tesseract and Ghostscript.
+
+What was verified: the Qt window, the tool finder (with a simulated
+Windows directory layout) and the PyInstaller build were exercised on
+Linux; the CI workflow runs the whole test suite and the PyInstaller build
+on a Windows runner with ffmpeg, ImageMagick, Ghostscript, poppler, pandoc,
+qpdf, 7-Zip and Graphviz installed through Chocolatey. The winget, scoop
+and Chocolatey package identifiers in `install-deps.ps1` and the Inno Setup
+script were written from their documentation and not run on a live Windows
+desktop.
+
 ## Usage
 
 ### Graphical interface
 
-Run `omniconv gui` or start Omniconv from the application menu. Drop files
-onto the window (or press `+`), choose a target from the "Convert to" list,
+Run `omniconv gui` (or `omniconv-gui`, or start Omniconv from the
+application menu). `omniconv gui --toolkit qt` or `--toolkit gtk` forces a
+toolkit; the default is GTK on Linux and Qt on Windows and macOS. Drop
+files onto the window (or press `+` / Ctrl+O), choose a target from the "Convert to" list,
 optionally set an output folder and options, and press Convert. The list of
 targets only contains formats that every listed file can reach, and the
 "Route" row shows which backends will be used. When several inputs can be
@@ -217,11 +282,21 @@ extension is used as the tiebreaker.
 
 ### Front ends
 
-The CLI (`omniconv/cli.py`) and the GUI (`omniconv/gui/`) are thin. Both
-generate their option flags and widgets from one table of option
-specifications (`omniconv/core/options.py`), so a new option is declared
-once. The GUI runs conversions on a worker thread and marshals results back
-to the GTK main loop.
+The CLI (`omniconv/cli.py`) and the two GUIs (`omniconv/gui/window.py` for
+GTK, `omniconv/gui/qt_app.py` for Qt) are thin. All three generate their
+option flags and widgets from one table of option specifications
+(`omniconv/core/options.py`), so a new option is declared once. Both GUIs
+run conversions on a worker thread and marshal results back to the toolkit's
+main loop. `omniconv/gui/launcher.py` picks the toolkit for the platform.
+
+### Platform layer
+
+`omniconv/core/platform.py` is the only place that knows about operating
+system differences. It locates tools (PATH first, then package-manager shim
+directories, then known install directories with version-aware ordering,
+then the Windows registry), renames tools where Windows names differ,
+refuses names that would resolve to Windows system utilities, hides console
+windows for subprocesses, and opens folders in the platform file manager.
 
 ## Supported formats
 
@@ -372,13 +447,15 @@ that heavy processes are used only when nothing lighter can do the job.
 
 ```
 omniconv/
-  core/        formats table, sniffing, requirements, registry + routing, engine, options
+  core/        formats table, sniffing, requirements, platform, registry + routing, engine, options
   converters/  one module per backend
-  gui/         GTK 4 / libadwaita application and window
+  gui/         GTK 4 window (app.py, window.py), Qt 6 window (qt_app.py), toolkit launcher
   cli.py       command-line interface
-  data/        desktop entry, icon, AppStream metainfo
-scripts/       dependency installer
-tests/         pytest suite
+  data/        desktop entry, icons (SVG and ICO), AppStream metainfo
+scripts/       dependency installers (install-deps.sh, install-deps.ps1)
+packaging/     PyInstaller spec, Inno Setup script and build script for Windows
+tests/         pytest suite (core, conversions, platform finder, Qt GUI)
+.github/       CI on Ubuntu and Windows
 ```
 
 ## License

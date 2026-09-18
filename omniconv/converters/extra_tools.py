@@ -89,13 +89,13 @@ _register_simple("weasyprint", Tool("weasyprint", package="weasyprint"), ("html"
     "chromium",
     ("html", "svg"),
     ("pdf", "png"),
-    requires=(Tool("chromium", ("chromium-browser", "google-chrome", "google-chrome-stable", "chrome", "brave-browser", "microsoft-edge"), package="chromium"),),
+    requires=(Tool("chromium", ("chromium-browser", "google-chrome", "google-chrome-stable", "chrome", "msedge", "brave-browser", "brave", "microsoft-edge"), package="chromium"),),
     cost=18,
     options=("width", "height"),
     description="Render HTML or SVG with a headless Chromium browser (best HTML fidelity)",
 )
 def chromium_render(job: Job) -> list[Path]:
-    exe = Tool("chromium", ("chromium-browser", "google-chrome", "google-chrome-stable", "chrome", "brave-browser", "microsoft-edge")).path()
+    exe = Tool("chromium", ("chromium-browser", "google-chrome", "google-chrome-stable", "chrome", "msedge", "brave-browser", "brave", "microsoft-edge")).path()
     assert exe
     profile = job.workdir / "chromium-profile"
     cmd = [exe, "--headless=new", "--disable-gpu", "--no-sandbox", f"--user-data-dir={profile}", "--no-first-run", "--hide-scrollbars", "--run-all-compositor-stages-before-draw", "--virtual-time-budget=5000"]
@@ -312,6 +312,9 @@ def fluidsynth_convert(job: Job) -> list[Path]:
     exe = Tool("fluidsynth").path()
     assert exe
     fonts = glob.glob("/usr/share/sounds/sf2/*.sf2") + glob.glob("/usr/share/soundfonts/*.sf2") + glob.glob("/usr/share/sounds/sf3/*.sf3")
+    fonts += glob.glob(os.path.expandvars(r"%ProgramFiles%\FluidSynth\**\*.sf2"), recursive=True) + glob.glob(r"C:\soundfonts\*.sf2")
+    if os.environ.get("SOUNDFONT"):
+        fonts.insert(0, os.environ["SOUNDFONT"])
     if not fonts:
         raise ConversionError("no SoundFont found (install fluid-soundfont-gm)")
     cmd = [exe, "-ni", "-F", str(job.target), "-T", job.tgt_format.name if job.tgt_format.name != "aiff" else "aiff"]

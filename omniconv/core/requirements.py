@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import functools
 import importlib.util
-import shutil
 from dataclasses import dataclass
+
+from omniconv.core import platform
 
 
 class Requirement:
@@ -22,11 +23,6 @@ class Requirement:
 
     def hint(self) -> str:
         return ""
-
-
-@functools.lru_cache(maxsize=None)
-def _which(name: str) -> str | None:
-    return shutil.which(name)
 
 
 @functools.lru_cache(maxsize=None)
@@ -54,7 +50,7 @@ class Tool(Requirement):
 
     def path(self) -> str | None:
         for candidate in (self.name, *self.alternatives):
-            found = _which(candidate)
+            found = platform.find_executable(candidate)
             if found:
                 return found
         return None
@@ -103,5 +99,5 @@ class AnyOf(Requirement):
 
 
 def reset_cache() -> None:
-    _which.cache_clear()
+    platform.reset_cache()
     _has_module.cache_clear()

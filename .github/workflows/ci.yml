@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  linux:
+    name: Linux (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install system backends
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg imagemagick ghostscript poppler-utils pandoc qpdf img2pdf librsvg2-bin libegl1 libxkbcommon0 libgl1
+      - name: Install Python backends
+        run: python -m pip install -e ".[all,qt]" pytest
+      - name: Backend report
+        run: python -m omniconv doctor
+      - name: Tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install system backends (Chocolatey)
+        shell: pwsh
+        run: |
+          choco install ffmpeg imagemagick ghostscript poppler pandoc qpdf 7zip graphviz -y --no-progress
+      - name: Install Python backends
+        run: python -m pip install -e ".[all,qt]" pytest pyinstaller
+      - name: Backend report
+        shell: pwsh
+        run: |
+          # Chocolatey adds to PATH for new shells; refresh it here.
+          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+          refreshenv
+          python -m omniconv doctor
+      - name: Tests
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+          refreshenv
+          python -m pytest -q
+      - name: Dry-run the dependency installer
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File scripts\install-deps.ps1 -DryRun
+      - name: Build stand-alone executables
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean packaging\windows\omniconv.spec
+          if (-not (Test-Path dist\Omniconv\Omniconv.exe)) { throw "GUI executable missing" }
+          if (-not (Test-Path dist\Omniconv\omniconv.exe)) { throw "CLI executable missing" }
+          dist\Omniconv\omniconv.exe --version
+          dist\Omniconv\omniconv.exe doctor
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Omniconv-windows
+          path: dist/Omniconv/
+          if-no-files-found: error

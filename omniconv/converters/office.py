@@ -102,7 +102,7 @@ def soffice_convert_file(source: Path, target: Path, spec: str, workdir: Path, i
     assert exe
     profile = Path(tempfile.mkdtemp(prefix="lo-profile-", dir=workdir))
     outdir = Path(tempfile.mkdtemp(prefix="lo-out-", dir=workdir))
-    cmd = [exe, "--headless", "--norestore", "--nologo", f"-env:UserInstallation=file://{profile}"]
+    cmd = [exe, "--headless", "--norestore", "--nologo", f"-env:UserInstallation={profile.as_uri()}"]
     if infilter:
         cmd.append(f"--infilter={infilter}")
     cmd += ["--convert-to", spec, "--outdir", str(outdir), str(source)]

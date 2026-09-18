@@ -31,15 +31,26 @@ docs = ["markdown", "openpyxl", "python-docx", "tomli-w", "PyYAML"]
 vector = ["cairosvg"]
 fonts = ["fonttools", "brotli"]
 data = ["msgpack", "PyYAML", "tomli-w", "openpyxl"]
+# The Qt front end is used on Windows and macOS (and on Linux without GTK 4).
+qt = ["PySide6>=6.5"]
 all = [
     "pillow>=9.0", "pillow-heif", "pymupdf>=1.23", "pypdf>=3.0", "reportlab",
     "markdown", "openpyxl", "tomli-w", "PyYAML", "cairosvg", "fonttools", "brotli", "msgpack",
 ]
-dev = ["pytest", "ruff"]
+# Everything a Windows install needs, including pip-distributed command-line tools.
+windows = [
+    "pillow>=9.0", "pillow-heif", "pymupdf>=1.23", "pypdf>=3.0", "reportlab",
+    "markdown", "openpyxl", "tomli-w", "PyYAML", "fonttools", "brotli", "msgpack",
+    "PySide6>=6.5", "img2pdf", "scour",
+]
+dev = ["pytest", "ruff", "pyinstaller"]
 
 [project.scripts]
 omniconv = "omniconv.cli:main"
-omniconv-gui = "omniconv.gui.app:run_app"
+
+# A GUI script gets a windowed launcher on Windows (no console window).
+[project.gui-scripts]
+omniconv-gui = "omniconv.gui.launcher:main"
 
 [project.urls]
 Homepage = "https://github.com/ur-bee-loved/claude"
@@ -49,6 +60,9 @@ include = ["omniconv*"]
 
 [tool.setuptools.package-data]
 omniconv = ["data/*"]
+
+[tool.setuptools.exclude-package-data]
+omniconv = ["data/*.pyc"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

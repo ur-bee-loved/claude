@@ -42,7 +42,7 @@ def calibre_convert(job: Job) -> list[Path]:
     if job.src_format.name == "md":
         cmd += ["--input-encoding", "utf-8", "--formatting-type", "markdown"]
     env = {"HOME": str(job.workdir), "QT_QPA_PLATFORM": "offscreen"}
-    if os.geteuid() == 0:
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
         # calibre's PDF output embeds Chromium, which refuses to run as root
         # unless sandboxing is disabled.
         env["QTWEBENGINE_CHROMIUM_FLAGS"] = "--no-sandbox"
