@@ -153,7 +153,11 @@ def _story_pdf(job: Job, source_html: str, page: str, title: str) -> Path:
     css = f"body{{font-family:sans-serif;font-size:{int(job.opt('font_size', 11))}pt}}"
     archive = fitz.Archive(str(job.source.parent))
     story = fitz.Story(html=source_html, user_css=css, archive=archive)
-    writer = fitz.DocumentWriter(str(job.target))
+    # Lay out into a scratch file, then save the final document once with
+    # metadata. Replacing a file that MuPDF still holds open fails on
+    # Windows, so the output path is written exactly once.
+    laid_out = job.scratch(".pdf")
+    writer = fitz.DocumentWriter(str(laid_out))
     more = True
     while more:
         dev = writer.begin_page(rect)
@@ -161,12 +165,11 @@ def _story_pdf(job: Job, source_html: str, page: str, title: str) -> Path:
         story.draw(dev)
         writer.end_page()
     writer.close()
-    doc = fitz.open(str(job.target))
+    doc = fitz.open(str(laid_out))
     doc.set_metadata({"title": title, "author": str(job.opt("author") or "")})
-    tmp = job.scratch(".pdf")
-    doc.save(str(tmp), garbage=2, deflate=True)
+    doc.save(str(job.target), garbage=2, deflate=True)
     doc.close()
-    tmp.replace(job.target)
+    laid_out.unlink(missing_ok=True)
     return job.target
 
 

@@ -121,10 +121,15 @@ git clone https://github.com/ur-bee-loved/claude omniconv
 cd omniconv
 powershell -ExecutionPolicy Bypass -File scripts\install-deps.ps1 -DryRun   # preview
 powershell -ExecutionPolicy Bypass -File scripts\install-deps.ps1           # install tools
-python -m pip install --user ".[windows]"
+python -m pip install ".[windows]"
 omniconv doctor
 omniconv-gui
 ```
+
+If `omniconv` is not recognised afterwards, Python's *Scripts* folder is
+not on your `PATH`; `python -m omniconv doctor` and `python -m omniconv gui`
+always work, or re-run the Python installer and tick "Add python.exe to
+PATH".
 
 `install-deps.ps1` uses winget (built into Windows 10 and 11), then scoop,
 then Chocolatey, for each tool that is not already present. It never stops

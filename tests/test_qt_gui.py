@@ -45,7 +45,10 @@ def test_targets_follow_inputs(window, samples):
     if not backend("pillow"):
         pytest.skip("Pillow missing")
     window.add_paths([str(samples / "sample.png"), str(samples / "sample.jpg")])
-    assert "webp" in window.target_names and "jpeg" in window.target_names
+    # Targets are formats every input can reach. A format reaches itself only
+    # when a same-format optimiser is installed, so assert on formats that
+    # differ from both inputs.
+    assert "webp" in window.target_names and "bmp" in window.target_names and "pdf" in window.target_names
     assert window.selected_target() is not None
     assert window.convert_button.isEnabled()
     assert window.merge_check.isVisible()

@@ -39,6 +39,17 @@ def _touch(path: Path) -> Path:
     return path
 
 
+def _shim(directory: Path, name: str) -> tuple[Path, Path]:
+    """Create ``name`` and ``name.exe`` side by side: ``shutil.which`` on
+    Windows only matches names with a PATHEXT extension, on Linux only the
+    bare name, and the tests must hold on both."""
+    bare = _touch(directory / name)
+    bare.chmod(0o755)
+    exe = _touch(directory / f"{name}.exe")
+    exe.chmod(0o755)
+    return bare, exe
+
+
 def test_expand_handles_windows_style_variables(monkeypatch):
     monkeypatch.setenv("OMNI_TEST_VAR", "value")
     assert platform._expand("%OMNI_TEST_VAR%/x") == "value/x"
@@ -61,20 +72,18 @@ def test_convert_is_never_looked_up_on_windows(fake_windows, tmp_path, monkeypat
     # A "convert" on PATH (the NTFS filesystem converter on Windows, or
     # ImageMagick 6 on Linux) must never be used.
     bindir = tmp_path / "system32"
-    exe = _touch(bindir / "convert")
-    exe.chmod(0o755)
+    _shim(bindir, "convert")
     monkeypatch.setenv("PATH", str(bindir))
     platform.reset_cache()
-    assert shutil.which("convert") == str(exe)
+    assert shutil.which("convert") is not None
     assert platform.find_executable("convert") is None
 
 
 def test_shim_directory_is_searched(fake_windows, tmp_path):
     shims = tmp_path / "shims"
-    exe = _touch(shims / "qpdf")
-    exe.chmod(0o755)
+    bare, exe = _shim(shims, "qpdf")
     assert shutil.which("qpdf") is None
-    assert platform.find_executable("qpdf") == str(exe)
+    assert platform.find_executable("qpdf") in (str(bare), str(exe))
 
 
 def test_version_key_orders_numerically():
@@ -86,7 +95,10 @@ def test_missing_tool_returns_none(fake_windows):
     assert platform.find_executable("definitely-not-a-tool-xyz") is None
 
 
-def test_linux_lookup_is_plain_path():
+def test_native_lookup_agrees_with_which():
     platform.reset_cache()
-    assert platform.find_executable("sh") == shutil.which("sh")
-    assert platform.hidden_console_kwargs() == {} or platform.IS_WINDOWS
+    # python is on PATH wherever the tests run; the finder must agree.
+    name = "python" if platform.IS_WINDOWS else "python3"
+    assert platform.find_executable(name) == shutil.which(name)
+    kwargs = platform.hidden_console_kwargs()
+    assert (kwargs == {}) != platform.IS_WINDOWS

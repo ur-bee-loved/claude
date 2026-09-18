@@ -168,7 +168,10 @@ Write-Host ""
 Write-Host "Python backends (user site-packages):"
 $py = if (Get-Command python -ErrorAction SilentlyContinue) { "python" } elseif (Get-Command py -ErrorAction SilentlyContinue) { "py" } else { $null }
 if ($py) {
-    Invoke-Step (@($py, "-m", "pip", "install", "--user", "--upgrade") + $PyPkgs.Split(" ")) | Out-Null
+    # No --user: pip falls back to a per-user install by itself when the
+    # Python installation is not writable, and a plain install keeps the
+    # omniconv command on PATH for per-user Python installations.
+    Invoke-Step (@($py, "-m", "pip", "install", "--upgrade") + $PyPkgs.Split(" ")) | Out-Null
 } else {
     Write-Host "  python not found yet; re-run this script after Python is installed (a new terminal is needed for PATH changes)."
 }

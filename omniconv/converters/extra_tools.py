@@ -14,6 +14,7 @@ set-up) get a small dedicated function further down.
 
 from __future__ import annotations
 
+import functools
 import glob
 import os
 import shutil
@@ -154,11 +155,33 @@ def latex_compile(job: Job) -> list[Path]:
     return [job.target]
 
 
-@converter("groff", ("man",), ("txt", "html", "pdf", "ps"), requires=(Tool("groff", package="groff"),), cost=12, description="Format a manual page with groff")
+_GROFF_DEVICES = {"txt": "utf8", "html": "html", "pdf": "pdf", "ps": "ps"}
+
+
+@functools.lru_cache(maxsize=1)
+def _groff_targets() -> frozenset[str]:
+    """Only the output devices this groff installation can drive. Debian's
+    groff-base, for example, has the terminal and PostScript devices but not
+    HTML or PDF, which live in the full groff package."""
+    exe = Tool("groff").path()
+    if not exe:
+        return frozenset()
+    usable = set()
+    for fmt, device in _GROFF_DEVICES.items():
+        try:
+            proc = run([exe, "-T" + device], stdin_data=b"", check=False, timeout=30)
+        except Exception:
+            continue
+        if proc.returncode == 0:
+            usable.add(fmt)
+    return frozenset(usable)
+
+
+@converter("groff", ("man",), _groff_targets, requires=(Tool("groff", package="groff"),), cost=12, description="Format a manual page with groff")
 def groff_convert(job: Job) -> list[Path]:
     exe = Tool("groff").path()
     assert exe
-    device = {"txt": "utf8", "html": "html", "pdf": "pdf", "ps": "ps"}[job.tgt_format.name]
+    device = _GROFF_DEVICES[job.tgt_format.name]
     cmd = [exe, "-man", "-T" + device, str(job.source)]
     if device == "utf8":
         cmd.insert(1, "-c")
