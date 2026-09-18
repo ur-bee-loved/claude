@@ -176,6 +176,12 @@ class MainWindow(Adw.ApplicationWindow):
         header.pack_end(menu_btn)
         toolbar.add_top_bar(header)
 
+        self.banner = Adw.Banner()
+        self.banner.set_button_label("Backends")
+        self.banner.connect("button-clicked", lambda *_: self.get_application().activate_action("backends", None))
+        self._refresh_backend_banner()
+        toolbar.add_top_bar(self.banner)
+
         split = Adw.OverlaySplitView(sidebar_position=Gtk.PackType.END, min_sidebar_width=320, max_sidebar_width=400, sidebar_width_fraction=0.36)
         toolbar.set_content(split)
         split.set_content(self._build_file_pane())
@@ -195,6 +201,15 @@ class MainWindow(Adw.ApplicationWindow):
         self.convert_button.connect("clicked", lambda *_: self.start_conversion())
         bottom.pack_end(self.convert_button)
         toolbar.add_bottom_bar(bottom)
+
+    def _refresh_backend_banner(self) -> None:
+        """Shown when fewer than half of the backends are usable, which is
+        the state of a fresh install before any external tools exist."""
+        available, total = len(REGISTRY.available()), len(REGISTRY.all())
+        few = available < total / 2
+        self.banner.set_revealed(few)
+        if few:
+            self.banner.set_title(f"{available} of {total} conversion backends installed. Run scripts/install-deps.sh to add ffmpeg, ImageMagick, Ghostscript, LibreOffice and more, then restart.")
 
     def _build_file_pane(self) -> Gtk.Widget:
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)

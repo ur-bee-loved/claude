@@ -260,6 +260,8 @@ class MainWindow(QtWidgets.QMainWindow):
         left = QtWidgets.QWidget()
         left_layout = QtWidgets.QVBoxLayout(left)
         left_layout.setContentsMargins(8, 8, 4, 8)
+        self.banner = self._make_backend_banner()
+        left_layout.addWidget(self.banner)
         self.file_list = FileList()
         self.file_list.files_dropped.connect(self.add_paths)
         self.file_list.itemSelectionChanged.connect(lambda: self.act_remove.setEnabled(bool(self.file_list.selectedItems())))
@@ -341,6 +343,41 @@ class MainWindow(QtWidgets.QMainWindow):
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
         splitter.setSizes([620, 380])
+
+    def _make_backend_banner(self) -> QtWidgets.QFrame:
+        """Shown when fewer than half of the backends are usable, which is
+        the state of a fresh pip install before any external tools exist."""
+        frame = QtWidgets.QFrame()
+        frame.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
+        frame.setStyleSheet("QFrame { background: palette(alternate-base); border: 1px solid palette(mid); border-radius: 4px; }")
+        layout = QtWidgets.QHBoxLayout(frame)
+        layout.setContentsMargins(10, 6, 10, 6)
+        label = QtWidgets.QLabel()
+        label.setWordWrap(True)
+        layout.addWidget(label, 1)
+        details = QtWidgets.QPushButton("Backends…")
+        details.clicked.connect(self.show_backends)
+        layout.addWidget(details)
+        dismiss = QtWidgets.QToolButton()
+        dismiss.setText("×")
+        dismiss.setAutoRaise(True)
+        dismiss.clicked.connect(frame.hide)
+        layout.addWidget(dismiss)
+        frame.banner_label = label  # type: ignore[attr-defined]
+        self._refresh_backend_banner(frame)
+        return frame
+
+    def _refresh_backend_banner(self, frame: QtWidgets.QFrame | None = None) -> None:
+        frame = frame or self.banner
+        available, total = len(REGISTRY.available()), len(REGISTRY.all())
+        few = available < total / 2
+        frame.setVisible(few)
+        if few:
+            script = "scripts\\install-deps.ps1" if platform.IS_WINDOWS else "scripts/install-deps.sh"
+            frame.banner_label.setText(  # type: ignore[attr-defined]
+                f"{available} of {total} conversion backends are installed. Many formats need external tools "
+                f"(ffmpeg, ImageMagick, Ghostscript, LibreOffice, ...). Run {script} to install them, then restart Omniconv."
+            )
 
     def _build_bottom(self) -> None:
         bar = QtWidgets.QWidget()
