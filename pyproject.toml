@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "omniconv"
+version = "0.1.0"
+description = "Native Linux file converter for images, audio, video, documents, PDFs, e-books, data, archives and fonts"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Omniconv contributors" }]
+keywords = ["converter", "image", "audio", "video", "pdf", "gtk", "linux"]
+classifiers = [
+    "Environment :: X11 Applications :: GTK",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Graphics :: Graphics Conversion",
+    "Topic :: Multimedia :: Sound/Audio :: Conversion",
+    "Topic :: Multimedia :: Video :: Conversion",
+    "Topic :: Office/Business",
+]
+# The core has no hard dependencies: every backend is optional and detected
+# at run time. The extras below install the pure-Python backends.
+dependencies = []
+
+[project.optional-dependencies]
+image = ["pillow>=9.0", "pillow-heif"]
+pdf = ["pymupdf>=1.23", "pypdf>=3.0", "reportlab"]
+docs = ["markdown", "openpyxl", "python-docx", "tomli-w", "PyYAML"]
+vector = ["cairosvg"]
+fonts = ["fonttools", "brotli"]
+data = ["msgpack", "PyYAML", "tomli-w", "openpyxl"]
+all = [
+    "pillow>=9.0", "pillow-heif", "pymupdf>=1.23", "pypdf>=3.0", "reportlab",
+    "markdown", "openpyxl", "tomli-w", "PyYAML", "cairosvg", "fonttools", "brotli", "msgpack",
+]
+dev = ["pytest", "ruff"]
+
+[project.scripts]
+omniconv = "omniconv.cli:main"
+omniconv-gui = "omniconv.gui.app:run_app"
+
+[project.urls]
+Homepage = "https://github.com/ur-bee-loved/claude"
+
+[tool.setuptools.packages.find]
+include = ["omniconv*"]
+
+[tool.setuptools.package-data]
+omniconv = ["data/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 160
+target-version = "py310"

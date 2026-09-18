@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Omniconv
+GenericName=File Converter
+Comment=Convert images, audio, video, PDFs, documents, e-books, data files, archives and fonts
+Exec=omniconv gui %F
+Icon=io.github.omniconv.Omniconv
+Terminal=false
+Categories=Utility;Graphics;AudioVideo;Office;GTK;
+Keywords=convert;converter;image;audio;video;pdf;document;ebook;archive;font;
+StartupNotify=true
+MimeType=image/png;image/jpeg;image/gif;image/webp;image/tiff;image/bmp;image/svg+xml;image/heif;image/avif;audio/mpeg;audio/wav;audio/flac;audio/ogg;audio/opus;audio/mp4;video/mp4;video/x-matroska;video/webm;video/quicktime;video/x-msvideo;application/pdf;application/epub+zip;application/vnd.openxmlformats-officedocument.wordprocessingml.document;application/vnd.oasis.opendocument.text;text/markdown;text/csv;application/json;application/zip;application/x-tar;font/ttf;font/otf;
