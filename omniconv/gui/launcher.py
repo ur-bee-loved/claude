@@ -54,7 +54,9 @@ def _report(message: str) -> None:
     """Print to stderr and, on Windows, also show a native message box: the
     windowed launcher has no console, so stderr alone would be invisible."""
     print(message, file=sys.stderr)
-    if platform.IS_WINDOWS:
+    # OMNICONV_NO_MSGBOX lets automated runs fail fast instead of blocking
+    # on a dialog nobody can dismiss.
+    if platform.IS_WINDOWS and not os.environ.get("OMNICONV_NO_MSGBOX"):
         try:
             import ctypes
 
