@@ -26,6 +26,11 @@
 .PARAMETER Manager
     Force one package manager: winget, scoop or choco.
 
+.PARAMETER CheckIds
+    Do not install anything; instead ask each available package manager
+    whether every identifier in the table exists, and report the ones that
+    do not. Exit code 2 when any identifier is unknown.
+
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File scripts\install-deps.ps1 -DryRun
     powershell -ExecutionPolicy Bypass -File scripts\install-deps.ps1
@@ -38,6 +43,7 @@
 [CmdletBinding()]
 param(
     [switch]$DryRun,
+    [switch]$CheckIds,
     [ValidateSet("", "winget", "scoop", "choco")]
     [string]$Manager = ""
 )
@@ -121,6 +127,52 @@ if ($managers.Count -eq 0) {
 Write-Host "Package managers: $($managers -join ', ')"
 if ($managers -contains "scoop" -and -not $DryRun) {
     scoop bucket add extras 2>$null | Out-Null
+}
+
+# ---- 0. optional: verify the identifiers against the catalogues ------------
+function Test-PackageId([string]$m, [string]$id) {
+    switch ($m) {
+        "winget" {
+            winget show --id $id -e --accept-source-agreements --disable-interactivity *> $null
+            return ($LASTEXITCODE -eq 0)
+        }
+        "choco" {
+            $out = choco search $id --exact --limit-output 2>$null
+            return [bool]($out -match ("^" + [regex]::Escape($id) + "\|"))
+        }
+        "scoop" {
+            $name = ($id -split "/")[-1]
+            $out = scoop search $name 2>$null
+            return [bool]($out -match ("(^|\s)" + [regex]::Escape($name) + "(\s|$)"))
+        }
+    }
+    return $false
+}
+
+if ($CheckIds) {
+    Write-Host ""
+    Write-Host "Checking package identifiers against: $($managers -join ', ')"
+    $bad = @()
+    foreach ($line in $Table -split "`n") {
+        $line = $line.Trim()
+        if (-not $line) { continue }
+        $f = $line.Split("|")
+        $ids = @{ winget = $f[2]; scoop = $f[3]; choco = $f[4] }
+        foreach ($m in $managers) {
+            $id = $ids[$m]
+            if (-not $id -or $id -eq "-") { continue }
+            $found = Test-PackageId $m $id
+            Write-Host ("  {0,-7} {1,-38} {2}" -f $m, $id, $(if ($found) { "ok" } else { "NOT FOUND" }))
+            if (-not $found) { $bad += "$m`:$id" }
+        }
+    }
+    Write-Host ""
+    if ($bad.Count -gt 0) {
+        Write-Host "Identifiers not found: $($bad -join ', ')"
+        exit 2
+    }
+    Write-Host "All identifiers resolve."
+    exit 0
 }
 
 # ---- 1. work out what is missing ------------------------------------------

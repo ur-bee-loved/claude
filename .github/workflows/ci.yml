@@ -59,6 +59,11 @@ jobs:
       - name: Dry-run the dependency installer
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File scripts\install-deps.ps1 -DryRun
+      - name: Check package identifiers against winget and Chocolatey
+        shell: pwsh
+        # Informational: catalogues change, so an unknown identifier is reported, not fatal.
+        continue-on-error: true
+        run: powershell -ExecutionPolicy Bypass -File scripts\install-deps.ps1 -CheckIds
       - name: Build stand-alone executables
         shell: pwsh
         run: |
