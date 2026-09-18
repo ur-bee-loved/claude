@@ -59,7 +59,16 @@ jobs:
       - name: Dry-run the dependency installer
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File scripts\install-deps.ps1 -DryRun
-      - name: Check package identifiers against winget and Chocolatey
+      - name: Install scoop so its package names can be checked too
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Invoke-Expression "& {$(Invoke-RestMethod get.scoop.sh)} -RunAsAdmin"
+          $env:PATH = "$env:USERPROFILE\scoop\shims;$env:PATH"
+          scoop bucket add extras
+          scoop --version
+          "$env:USERPROFILE\scoop\shims" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+      - name: Check package identifiers against winget, scoop and Chocolatey
         shell: pwsh
         # Informational: catalogues change, so an unknown identifier is reported, not fatal.
         continue-on-error: true
