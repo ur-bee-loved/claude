@@ -187,11 +187,17 @@ was not found on winget's community source at all, so the installer
 obtains it through scoop or Chocolatey and otherwise points at the
 ghostscript.com download.
 
-The Inno Setup script is compiled on the same runner and the resulting
-`Omniconv-Setup.exe` is uploaded, so the installer builds; what the
-installer does when run (shortcuts, `PATH`, *Send to*, "Open with") has
-not been exercised, and nothing has run on a Windows desktop with a
-display, only on the headless runner.
+The Inno Setup script is compiled on the same runner, the resulting
+`Omniconv-Setup.exe` is uploaded, and the job then installs it silently
+with the optional tasks selected, checks the program directory, runs the
+installed command line, checks the Start Menu and *Send to* shortcuts,
+the Explorer "Open with" registration and the user `PATH` entry, and
+uninstalls silently, checking that the program and the registration are
+gone.
+
+Not yet verified: nothing has run on a Windows desktop with a display,
+only on the headless runner, so the window itself has been exercised
+only through Qt's offscreen platform.
 
 ## Usage
 
