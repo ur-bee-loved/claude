@@ -13,6 +13,10 @@ import sys
 from omniconv.core import platform
 
 
+# Why each toolkit could not be imported, for the error report.
+IMPORT_ERRORS: dict[str, str] = {}
+
+
 def available_toolkits() -> list[str]:
     out = []
     try:
@@ -21,14 +25,15 @@ def available_toolkits() -> list[str]:
         gi.require_version("Gtk", "4.0")
         gi.require_version("Adw", "1")
         out.append("gtk")
-    except Exception:
-        pass
+    except Exception as exc:
+        IMPORT_ERRORS["gtk"] = f"{type(exc).__name__}: {exc}"
     try:
         import PySide6  # noqa: F401
+        from PySide6 import QtWidgets  # noqa: F401
 
         out.append("qt")
-    except Exception:
-        pass
+    except Exception as exc:
+        IMPORT_ERRORS["qt"] = f"{type(exc).__name__}: {exc}"
     return out
 
 
@@ -50,10 +55,26 @@ def install_hint() -> str:
     return "sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1   (or: pip install PySide6)"
 
 
+def error_log_path():
+    return platform.user_data_dir() / "launcher-error.log"
+
+
 def _report(message: str) -> None:
-    """Print to stderr and, on Windows, also show a native message box: the
-    windowed launcher has no console, so stderr alone would be invisible."""
-    print(message, file=sys.stderr)
+    """Print to stderr, write a log file, and on Windows show a native
+    message box: the windowed launcher has no console, so stderr alone
+    would be invisible."""
+    if sys.stderr is not None:
+        print(message, file=sys.stderr)
+    try:
+        import datetime
+
+        path = error_log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(f"--- {datetime.datetime.now().isoformat(timespec='seconds')} "
+                     f"frozen={getattr(sys, 'frozen', False)} executable={sys.executable}\n{message}\n")
+    except Exception:
+        pass
     # OMNICONV_NO_MSGBOX lets automated runs fail fast instead of blocking
     # on a dialog nobody can dismiss.
     if platform.IS_WINDOWS and not os.environ.get("OMNICONV_NO_MSGBOX"):
@@ -72,7 +93,8 @@ def run(files: list[str] | None = None) -> int:
     elif tk == "qt":
         from omniconv.gui.qt_app import run_app
     else:
-        _report("No GUI toolkit found. Install one with:\n\n  " + install_hint())
+        details = "\n".join(f"  {name}: {err}" for name, err in IMPORT_ERRORS.items())
+        _report("No GUI toolkit found. Install one with:\n\n  " + install_hint() + ("\n\nImport errors:\n" + details if details else ""))
         return 1
     return run_app(files)
 

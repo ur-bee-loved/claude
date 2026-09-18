@@ -93,7 +93,11 @@ jobs:
         run: |
           $p = Start-Process -FilePath dist\Omniconv\Omniconv.exe -PassThru
           Start-Sleep -Seconds 10
-          if ($p.HasExited) { throw "Omniconv.exe exited early with code $($p.ExitCode)" }
+          if ($p.HasExited) {
+            $log = "$env:LOCALAPPDATA\omniconv\launcher-error.log"
+            if (Test-Path $log) { Write-Host "--- launcher-error.log ---"; Get-Content $log } else { Write-Host "no launcher-error.log written" }
+            throw "Omniconv.exe exited early with code $($p.ExitCode)"
+          }
           Stop-Process -Id $p.Id -Force
           Write-Host "bundled GUI started and stayed running for 10 s"
       - name: Upload Windows build
