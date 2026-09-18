@@ -133,7 +133,9 @@ if ($managers -contains "scoop" -and -not $DryRun) {
 function Test-PackageId([string]$m, [string]$id) {
     switch ($m) {
         "winget" {
-            winget show --id $id -e --accept-source-agreements --disable-interactivity *> $null
+            # Query the community source only: the msstore source can fail on
+            # locked-down or headless machines and would mask valid identifiers.
+            winget show --id $id -e --source winget --accept-source-agreements --disable-interactivity *> $null
             return ($LASTEXITCODE -eq 0)
         }
         "choco" {
