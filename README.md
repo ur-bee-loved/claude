@@ -178,14 +178,14 @@ which then run `doctor` themselves. The three Windows-only bugs this
 surfaced (a replace of a file MuPDF still held open, `PATHEXT` casing in a
 test, and the same `.EXE` spelling in path comparisons) are fixed.
 
-The winget and Chocolatey identifiers in `install-deps.ps1` are checked
-against the live catalogues by `install-deps.ps1 -CheckIds`, which the CI
-job runs; every identifier resolves. Two tools are not in those catalogues
-and are left to scoop: FluidSynth (not on winget) and potrace (not on
-Chocolatey). Ghostscript was not found on winget's community source at
-all, so the installer obtains it through scoop or Chocolatey and otherwise
-points at the ghostscript.com download. The scoop names were not
-checked, because scoop is not on the runner.
+Every winget, scoop and Chocolatey identifier in `install-deps.ps1` is
+checked against the live catalogues by `install-deps.ps1 -CheckIds`,
+which the CI job runs after installing scoop on the runner; all 72
+resolve. Two tools are missing from one catalogue and come from another:
+FluidSynth is not on winget and potrace is not on Chocolatey. Ghostscript
+was not found on winget's community source at all, so the installer
+obtains it through scoop or Chocolatey and otherwise points at the
+ghostscript.com download.
 
 The Inno Setup script is compiled on the same runner and the resulting
 `Omniconv-Setup.exe` is uploaded, so the installer builds; what the
