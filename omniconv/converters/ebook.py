@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from omniconv.core.engine import Job
@@ -40,7 +41,12 @@ def calibre_convert(job: Job) -> list[Path]:
         cmd += ["--paper-size", str(job.opt("page_size", "a4")).lower(), "--pdf-default-font-size", str(int(job.opt("font_size", 11)))]
     if job.src_format.name == "md":
         cmd += ["--input-encoding", "utf-8", "--formatting-type", "markdown"]
-    run(cmd, env={"HOME": str(job.workdir), "QT_QPA_PLATFORM": "offscreen"}, timeout=1200)
+    env = {"HOME": str(job.workdir), "QT_QPA_PLATFORM": "offscreen"}
+    if os.geteuid() == 0:
+        # calibre's PDF output embeds Chromium, which refuses to run as root
+        # unless sandboxing is disabled.
+        env["QTWEBENGINE_CHROMIUM_FLAGS"] = "--no-sandbox"
+    run(cmd, env=env, timeout=1200)
     if target != job.target and target.exists():
         target.rename(job.target)
     return [job.target]

@@ -287,7 +287,8 @@ def detect(path: Path) -> Format | None:
             ("gz", "svgz"), ("m4a", "alac"), ("m4a", "m4b"), ("ass", "ssa"), ("ps", "eps"), ("eps", "ps"),
             ("png", "apng"), ("xml", "mediawiki"), ("xml", "ttml"), ("xml", "opml"), ("xml", "docbook"),
             ("xml", "plist"), ("xml", "fb2"), ("xml", "svgfont"), ("xml", "dxf"), ("xml", "fodt"), ("xml", "ttx"),
-            ("html", "htmlz"), ("zip", "epub"), ("txt", "asciidoc"), ("txt", "typst"), ("txt", "textile"), ("txt", "dokuwiki"),
+            ("html", "htmlz"), ("zip", "epub"), ("xml", "dae"), ("xml", "x3d"), ("xml", "assxml"), ("zip", "3mf"),
+            ("xml", "gnumeric"), ("gz", "gnumeric"), ("txt", "bibtex"), ("txt", "biblatex"), ("json", "csljson"), ("json", "gltf"), ("txt", "dot"), ("txt", "obj"), ("txt", "stl"), ("txt", "ply"), ("txt", "off"), ("txt", "asciidoc"), ("txt", "typst"), ("txt", "textile"), ("txt", "dokuwiki"),
             ("txt", "jira"), ("txt", "muse"), ("txt", "haddock"), ("txt", "t2t"), ("txt", "man"), ("txt", "mediawiki"),
         }
         if (detected.name, ext_fmt.name) in same_family:

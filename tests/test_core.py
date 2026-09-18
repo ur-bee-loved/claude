@@ -148,3 +148,27 @@ def test_engine_reports_no_route(tmp_path):
 def test_registry_loaded_backends():
     names = {c.name for c in REGISTRY.all()}
     assert {"pillow", "imagemagick", "ffmpeg-audio", "ffmpeg-video", "pymupdf-render", "libreoffice", "pandoc", "python-data", "archive-repack"} <= names
+
+
+def test_all_backend_modules_loaded_without_error():
+    """A registration error in any module (for example an unknown format
+    name) would silently drop every converter after it."""
+    import importlib
+
+    from omniconv.converters import _MODULES
+
+    for mod in _MODULES:
+        module = importlib.import_module(f"omniconv.converters.{mod}")
+        assert module is not None
+    assert len(REGISTRY.all()) >= 110
+    assert {"graphviz", "assimp", "timidity", "cjxl", "woff2-tools", "pdfunite"} <= {c.name for c in REGISTRY.all()}
+
+
+def test_every_converter_only_names_known_formats():
+    from omniconv.core.registry import Converter
+
+    for conv in REGISTRY.all():
+        if not conv.available():
+            continue
+        for name in conv.source_names() | conv.target_names():
+            assert name in formats.FORMATS, f"{conv.name} references unknown format {name}"

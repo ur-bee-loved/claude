@@ -25,6 +25,7 @@ _MODULES = (
     "archives",
     "fonts",
     "ocr",
+    "extra_tools",
 )
 
 _loaded = False

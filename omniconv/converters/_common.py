@@ -90,10 +90,12 @@ def size_args(job: Job) -> tuple[int | None, int | None]:
 def load_pymupdf():
     """Import PyMuPDF under its new name, falling back to the legacy ``fitz``."""
     try:
-        import pymupdf
-
-        return pymupdf
+        import pymupdf as module
     except ImportError:
-        import fitz
-
-        return fitz
+        import fitz as module
+    try:
+        # MuPDF prints CSS and font warnings to stderr; they are not errors here.
+        module.TOOLS.mupdf_display_errors(False)
+    except Exception:
+        pass
+    return module

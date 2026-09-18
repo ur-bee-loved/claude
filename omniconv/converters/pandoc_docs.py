@@ -43,6 +43,9 @@ _MAP: dict[str, tuple[str | None, str | None]] = {
     "pdf": (None, "pdf"),
     "csv": ("csv", None),
     "tsv": ("tsv", None),
+    "bibtex": ("bibtex", "bibtex"),
+    "biblatex": ("biblatex", "biblatex"),
+    "csljson": ("csljson", "csljson"),
 }
 
 _PDF_ENGINES = ("pdflatex", "xelatex", "lualatex", "tectonic", "wkhtmltopdf", "weasyprint", "prince", "typst", "pagedjs-cli", "context", "pdfroff")

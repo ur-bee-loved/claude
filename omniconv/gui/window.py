@@ -37,6 +37,7 @@ CATEGORY_LABELS = {
     "data": "Data",
     "archive": "Archive",
     "font": "Font",
+    "model": "3D model",
 }
 CATEGORY_ORDER = {c: i for i, c in enumerate(formats.CATEGORIES)}
 # Reasonable default target per category, tried in order.
@@ -51,6 +52,7 @@ PREFERRED_TARGETS = {
     "data": ("json", "csv", "yaml"),
     "archive": ("zip", "tar.gz", "7z"),
     "font": ("woff2", "woff", "ttf"),
+    "model": ("glb", "obj", "stl"),
 }
 CATEGORY_ICONS = {
     "image": "image-x-generic-symbolic",
@@ -63,6 +65,7 @@ CATEGORY_ICONS = {
     "data": "text-x-generic-symbolic",
     "archive": "package-x-generic-symbolic",
     "font": "font-x-generic-symbolic",
+    "model": "applications-graphics-symbolic",
 }
 
 

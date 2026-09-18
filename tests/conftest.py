@@ -66,6 +66,22 @@ def samples(tmp_path_factory) -> Path:
             ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=64x48:rate=10:duration=1", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(d / "sample.mp4")],
             check=True,
         )
+    (d / "graph.dot").write_text("digraph G { a -> b; b -> c; }\n")
+    (d / "cube.obj").write_text("v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n")
+    (d / "sample.1").write_text(".TH SAMPLE 1\n.SH NAME\nsample \\- a manual page\n.SH DESCRIPTION\nText.\n")
+    import struct
+
+    def vlq(n: int) -> bytes:
+        out = [n & 0x7F]
+        n >>= 7
+        while n:
+            out.append(0x80 | (n & 0x7F))
+            n >>= 7
+        return bytes(reversed(out))
+
+    events = b"".join(vlq(0) + bytes([0x90, note, 100]) + vlq(240) + bytes([0x80, note, 0]) for note in (60, 64, 67))
+    track = events + vlq(0) + b"\xff\x2f\x00"
+    (d / "tune.mid").write_bytes(b"MThd" + struct.pack(">IHHH", 6, 0, 1, 120) + b"MTrk" + struct.pack(">I", len(track)) + track)
     import tarfile
 
     with tarfile.open(d / "sample.tar.gz", "w:gz") as tf:

@@ -45,6 +45,12 @@ CASES = [
     ("sample.csv", "xlsx", "openpyxl"),
     ("sample.tar.gz", "zip", "archive-repack"),
     ("sample.tar.gz", "tar.xz", "archive-repack"),
+    ("graph.dot", "svg", "graphviz"),
+    ("cube.obj", "stl", "assimp"),
+    ("sample.png", "jxl", "cjxl"),
+    ("sample.wav", "wv", "wavpack"),
+    ("tune.mid", "wav", "timidity"),
+    ("sample.1", "html", "groff"),
 ]
 
 

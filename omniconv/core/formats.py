@@ -28,6 +28,7 @@ CATEGORIES = (
     "data",
     "archive",
     "font",
+    "model",
 )
 
 
@@ -165,6 +166,7 @@ _FORMAT_LIST: list[Format] = [
     _f("emf",   "vector", "emf",           "image/emf",              "Enhanced Metafile"),
     _f("dxf",   "vector", "dxf",           "image/vnd.dxf",          "AutoCAD DXF"),
     _f("cgm",   "vector", "cgm",           "image/cgm",              "Computer Graphics Metafile"),
+    _f("dot",   "vector", "dot gv",        "text/vnd.graphviz",      "Graphviz DOT graph"),
     # ---------------------------------------------------------------- audio
     _f("mp3",   "audio", "mp3",            "audio/mpeg",             "MPEG-1 Layer III"),
     _f("wav",   "audio", "wav",            "audio/wav",              "Waveform audio"),
@@ -202,6 +204,7 @@ _FORMAT_LIST: list[Format] = [
     _f("8svx",  "audio", "8svx",           "audio/x-8svx",           "Amiga 8SVX"),
     _f("aptx",  "audio", "aptx",           "audio/aptx",             "aptX"),
     _f("g722",  "audio", "g722",           "audio/g722",             "G.722 ADPCM"),
+    _f("midi",  "audio", "mid midi kar",   "audio/midi",             "Standard MIDI file"),
     # ---------------------------------------------------------------- video
     _f("mp4",   "video", "mp4 m4v",        "video/mp4",              "MPEG-4 Part 14"),
     _f("mkv",   "video", "mkv",            "video/x-matroska",       "Matroska video"),
@@ -281,6 +284,11 @@ _FORMAT_LIST: list[Format] = [
     _f("sxw",   "document", "sxw",         "application/vnd.sun.xml.writer", "OpenOffice.org 1.0 text"),
     _f("uot",   "document", "uot",         "application/x-uof",      "Unified Office Format text"),
     _f("dotx",  "document", "dotx dot",    "application/vnd.openxmlformats-officedocument.wordprocessingml.template", "Word template"),
+    _f("dvi",   "document", "dvi",         "application/x-dvi",      "TeX device-independent file"),
+    _f("gnumeric","document", "gnumeric",  "application/x-gnumeric", "Gnumeric spreadsheet"),
+    _f("bibtex","document", "bib bibtex",  "text/x-bibtex",          "BibTeX bibliography"),
+    _f("biblatex","document", "biblatex",  "text/x-bibtex",          "BibLaTeX bibliography"),
+    _f("csljson","document", "csl.json",   "application/vnd.citationstyles.csl+json", "CSL JSON bibliography"),
     # ---------------------------------------------------------------- ebook
     _f("epub",  "ebook", "epub",           "application/epub+zip",   "EPUB"),
     _f("mobi",  "ebook", "mobi prc",       "application/x-mobipocket-ebook", "Mobipocket"),
@@ -344,6 +352,7 @@ _FORMAT_LIST: list[Format] = [
     _f("arj",   "archive", "arj",          "application/x-arj",      "ARJ archive"),
     _f("lzh",   "archive", "lzh lha",      "application/x-lzh-compressed", "LHA archive"),
     _f("z",     "archive", "z",            "application/x-compress", "Unix compress"),
+    _f("xar",   "archive", "xar pkg",      "application/x-xar",      "XAR archive"),
     # ----------------------------------------------------------------- font
     _f("ttf",   "font", "ttf",             "font/ttf",               "TrueType font"),
     _f("otf",   "font", "otf",             "font/otf",               "OpenType font"),
@@ -356,6 +365,21 @@ _FORMAT_LIST: list[Format] = [
     _f("bdf",   "font", "bdf",             "application/x-font-bdf", "Glyph Bitmap Distribution Format"),
     _f("pcf",   "font", "pcf",             "application/x-font-pcf", "Portable Compiled Format"),
     _f("svgfont","font", "svg.font",       "image/svg+xml",          "SVG font"),
+    # ---------------------------------------------------------------- model
+    _f("obj",   "model", "obj",            "model/obj",              "Wavefront OBJ"),
+    _f("stl",   "model", "stl",            "model/stl",              "Stereolithography"),
+    _f("ply",   "model", "ply",            "application/x-ply",      "Stanford polygon"),
+    _f("gltf",  "model", "gltf",           "model/gltf+json",        "GL Transmission Format (JSON)"),
+    _f("glb",   "model", "glb",            "model/gltf-binary",      "GL Transmission Format (binary)"),
+    _f("dae",   "model", "dae",            "model/vnd.collada+xml",  "COLLADA"),
+    _f("fbx",   "model", "fbx",            "application/x-fbx",      "Autodesk FBX"),
+    _f("3ds",   "model", "3ds",            "image/x-3ds",            "3D Studio"),
+    _f("x3d",   "model", "x3d",            "model/x3d+xml",          "X3D"),
+    _f("3mf",   "model", "3mf",            "model/3mf",              "3D Manufacturing Format"),
+    _f("off",   "model", "off",            "application/x-off",      "Object File Format"),
+    _f("x",     "model", "x",              "application/x-directx",  "DirectX X"),
+    _f("blend", "model", "blend",          "application/x-blender",  "Blender scene"),
+    _f("assxml","model", "assxml",         "application/xml",        "Assimp XML dump"),
 ]
 # fmt: on
 

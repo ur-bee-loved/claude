@@ -12,10 +12,10 @@ Python libraries) behind one interface, and it chains them automatically
 when no single tool covers a conversion.
 
 On the system used during development (Ubuntu 24.04 with the packages from
-`scripts/install-deps.sh`) the registry reports 57 usable backends, 292
-recognised source formats and roughly 37,000 reachable source-to-target
-pairs. Those numbers depend entirely on what is installed; `omniconv doctor`
-prints the figures for your machine.
+`scripts/install-deps.sh`) the registry reports 100 usable backends out of
+121 defined, 314 recognised source formats and roughly 42,000 reachable
+source-to-target pairs. Those numbers depend entirely on what is installed;
+`omniconv doctor` prints the figures for your machine.
 
 ## Contents
 
@@ -69,8 +69,18 @@ without them.
 | librsvg, CairoSVG, Inkscape, potrace | SVG rendering, bitmap tracing, WMF/EMF/DXF |
 | tesseract, OCRmyPDF | text recognition from images and scanned PDFs |
 | fontTools, FontForge | TTF/OTF/WOFF/WOFF2/TTX, Type 1, BDF |
-| sox, lame, flac, vorbis-tools, opus-tools | audio fallbacks when ffmpeg is missing |
-| 7-Zip, zstd, lz4 | exotic archives (RAR, CAB, ISO, DEB, RPM) and extra compressors |
+| sox, lame, flac, vorbis-tools, opus-tools, mpg123, faad, wavpack, speex, twolame | audio fallbacks when ffmpeg is missing |
+| TiMidity++ or FluidSynth | MIDI to audio |
+| 7-Zip, libarchive (`bsdtar`), unar, zstd, lz4 | exotic archives (RAR, CAB, ISO, DEB, RPM, XAR) and extra compressors |
+| Graphviz | DOT graphs to SVG, PNG, PDF and more |
+| assimp | 3D models: OBJ, STL, PLY, glTF/GLB, COLLADA, FBX, 3DS, X3D, 3MF |
+| wkhtmltopdf, WeasyPrint, Chromium | HTML rendering to PDF and images |
+| Asciidoctor, Typst, TeX Live, groff | AsciiDoc, Typst, LaTeX and man page compilation |
+| DjVuLibre, pdf2djvu | DjVu to PDF/images/text and back |
+| libwebp, libheif, libjxl tools | WebP, HEIF/AVIF and JPEG XL codecs when Pillow lacks them |
+| optipng, pngquant, jpegoptim, gifsicle, svgo, scour | same-format optimisation (`-t png` on a PNG) |
+| antiword, catdoc, odt2txt, docx2txt, unrtf, Gnumeric | lightweight text extraction and spreadsheet conversion |
+| dcraw, darktable, RawTherapee | camera RAW development |
 
 ## Usage
 
@@ -227,6 +237,11 @@ backends are present.
   JAR, APK (read); any file into an archive; several files into one archive.
 * **Fonts:** TTF, OTF, WOFF, WOFF2, TTX, dfont; Type 1, BDF, PCF and SVG
   fonts with FontForge.
+* **3D models:** OBJ, STL, PLY, glTF, GLB, COLLADA, FBX, 3DS, X3D, 3MF,
+  OFF, DirectX X (via assimp).
+* **Other:** Graphviz DOT graphs to any image or vector format; MIDI files
+  to any audio format (synthesised with TiMidity++ or FluidSynth);
+  BibTeX, BibLaTeX and CSL JSON bibliographies (via pandoc).
 
 ## Options
 
@@ -251,6 +266,30 @@ sidebar. Each backend applies the ones it understands and ignores the rest.
 | `encoding`, `delimiter`, `indent`, `sheet` | data | text encoding, CSV delimiter, pretty-print indent, sheet or table |
 | `title`, `author`, `font_size`, `page_size` | generated documents | metadata and layout |
 
+### Which backends were exercised
+
+The integration tests and the development smoke runs executed the
+following backends on real files: Pillow, ImageMagick, ffmpeg (audio,
+video, frames, subtitles, concat), sox, lame, flac, oggenc, opusenc,
+PyMuPDF, pypdf, pdftoppm, pdftotext, pdftohtml, pdftocairo, pdfimages,
+pdfseparate, pdfunite, Ghostscript, img2pdf, qpdf, rsvg-convert, CairoSVG,
+LibreOffice, pandoc, calibre, tesseract, the pure-Python text, data and
+archive converters, fontTools, woff2 tools, Graphviz, assimp, TiMidity++,
+groff, Asciidoctor, unrtf, docx2txt, Gnumeric, DjVuLibre, pdf2djvu, cjxl,
+cwebp, dwebp, gif2webp, optipng, pngquant, jpegoptim, gifsicle, wavpack,
+speex, twolame, wkhtmltopdf and wkhtmltoimage.
+
+The following backends are written from the tools' documented command
+lines but were not executed during development because the tool was not
+installable here: Inkscape, potrace, FontForge, OCRmyPDF, WeasyPrint,
+Chromium (the headless-browser backend), Typst, asciidoctor-pdf, pdflatex
+and the other TeX engines, dvipdfmx/dvips/dvisvgm, FluidSynth, avifenc,
+avifdec, heif-enc (installed but without encoders), dcraw (installed, no
+RAW sample), darktable-cli, rawtherapee-cli, mpg123, faad, fdkaac, mac,
+svgo, scour, sfnt2woff, woff2sfnt, catdoc, xls2csv, catppt, antiword,
+odt2txt and darktable. Treat those as best-effort until you have run them
+once; `omniconv route` and `--backend` make it easy to test a single one.
+
 ## Known limitations
 
 These are properties of the underlying tools or of deliberate design
@@ -267,8 +306,10 @@ choices rather than bugs, and are worth knowing before relying on a result.
   literally and are preferred for `.txt` to HTML or PDF.
 * **CSV or record lists to TOML** are wrapped as an array of tables named
   `rows`, because TOML has no top-level array.
-* **Vector to raster conversions** rasterise at the given `dpi`; raster to
-  SVG without potrace embeds the bitmap rather than tracing it.
+* **Vector to raster conversions** rasterise at the given `dpi`. Raster to
+  SVG embeds the bitmap by default; for a traced outline convert to PBM
+  first and then run potrace (`omniconv convert x.png -t pbm`, then
+  `omniconv convert x.pbm -t svg`).
 * **Same-name inputs** converting into the same folder (`a.png` and `a.jpg`
   to WebP) produce `a.webp` and `a (1).webp`.
 * **Legacy or proprietary formats** (RAW variants, Pages, Keynote, Publisher)

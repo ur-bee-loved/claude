@@ -29,10 +29,13 @@ SEVENZIP = Tool("7z", ("7za", "7zr", "7zz"), package="p7zip-full")
 ZSTD = Tool("zstd", package="zstd")
 LZ4 = Tool("lz4", package="lz4")
 UNRAR = Tool("unrar", package="unrar")
+BSDTAR = Tool("bsdtar", package="libarchive-tools")
+UNAR = Tool("unar", package="unar")
 
 _TAR_MODES = {"tar": "", "tar.gz": "gz", "tar.bz2": "bz2", "tar.xz": "xz"}
 _PY_ARCHIVE = ("zip", "tar", "tar.gz", "tar.bz2", "tar.xz", "jar")
 _SEVENZ_READ = ("7z", "rar", "cab", "iso", "arj", "lzh", "wim", "cpio", "ar", "deb", "rpm", "dmg", "apk", "z", "cbz", "cbr", "xps", "epub", "docx", "xlsx", "pptx", "odt", "ods", "odp")
+_BSDTAR_READ = ("7z", "rar", "cab", "iso", "cpio", "ar", "deb", "xar", "lzh", "z", "cbz", "cbr", "apk")
 _SEVENZ_WRITE = ("7z", "wim")
 _SINGLE = ("gz", "bz2", "xz", "lzma", "zst", "lz4")
 
@@ -88,7 +91,13 @@ def extract(source: Path, fmt: str, dest: Path, password: str | None = None) -> 
     if fmt in ("rar", "cbr") and UNRAR.available():
         run([UNRAR.path(), "x", "-y", str(source), str(dest) + os.sep])
         return
-    raise ConversionError(f"no tool available to extract {fmt} (install p7zip-full)")
+    if BSDTAR.available():
+        run([BSDTAR.path(), "-xf", str(source), "-C", str(dest)])
+        return
+    if UNAR.available():
+        run([UNAR.path(), "-q", "-o", str(dest), str(source)])
+        return
+    raise ConversionError(f"no tool available to extract {fmt} (install p7zip-full or libarchive-tools)")
 
 
 def pack(src_dir: Path, fmt: str, target: Path, level: int | None = None) -> None:
@@ -138,7 +147,9 @@ def _archive_sources() -> set[str]:
         out.add("tar.zst")
     if SEVENZIP.available():
         out.update(_SEVENZ_READ)
-    elif UNRAR.available():
+    if BSDTAR.available() or UNAR.available():
+        out.update(_BSDTAR_READ)
+    if UNRAR.available():
         out.update(("rar", "cbr"))
     return out
 

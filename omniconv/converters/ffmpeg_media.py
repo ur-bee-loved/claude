@@ -167,7 +167,9 @@ def _subtitle_targets() -> set[str]:
 
 
 def _media_sources() -> set[str]:
-    return {f.name for f in formats.all_formats("audio")} | {f.name for f in formats.all_formats("video")}
+    # ffmpeg reads every container in the table except MIDI, which is a
+    # score rather than sampled audio and needs a synthesiser.
+    return ({f.name for f in formats.all_formats("audio")} | {f.name for f in formats.all_formats("video")}) - {"midi"}
 
 
 def _video_sources() -> set[str]:
