@@ -1,12 +1,14 @@
 ; Inno Setup script for Omniconv. Compile with ISCC.exe after PyInstaller
-; has produced dist\Omniconv\ (see build.ps1). Paths are relative to the
-; repository root because build.ps1 runs ISCC from there.
+; has produced dist\Omniconv\ (see build.ps1). Inno Setup resolves relative
+; paths from the script's directory, so SourceDir points at the repository
+; root and every path below is written relative to it.
 
 #define AppName "Omniconv"
 #define AppVersion "0.1.0"
 #define AppExe "Omniconv.exe"
 
 [Setup]
+SourceDir=..\..
 AppId={{F119E4A2-BF6C-4EC8-BADB-BDBBF6307941}
 AppName={#AppName}
 AppVersion={#AppVersion}
