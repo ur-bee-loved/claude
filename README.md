@@ -165,14 +165,23 @@ the same executables on every pull request and attaches them as the
 - `img2pdf`, `scour` and `ocrmypdf` are installed through pip, since they
   are Python programs; `ocrmypdf` still needs Tesseract and Ghostscript.
 
-What was verified: the Qt window, the tool finder (with a simulated
-Windows directory layout) and the PyInstaller build were exercised on
-Linux; the CI workflow runs the whole test suite and the PyInstaller build
-on a Windows runner with ffmpeg, ImageMagick, Ghostscript, poppler, pandoc,
-qpdf, 7-Zip and Graphviz installed through Chocolatey. The winget, scoop
-and Chocolatey package identifiers in `install-deps.ps1` and the Inno Setup
-script were written from their documentation and not run on a live Windows
-desktop.
+What was verified on Windows: the CI workflow runs on a GitHub Windows
+runner with ffmpeg, ImageMagick, Ghostscript, poppler, pandoc, qpdf, 7-Zip
+and Graphviz installed through Chocolatey. There, the whole test suite
+passes (including real ffmpeg, ImageMagick, PyMuPDF and pandoc
+conversions and the headless Qt window), `omniconv doctor` finds 51
+backends, `install-deps.ps1 -DryRun` correctly recognises the nine tools
+already present and names the winget or Chocolatey package for each
+missing one, and PyInstaller builds `Omniconv.exe` and `omniconv.exe`,
+which then run `doctor` themselves. The three Windows-only bugs this
+surfaced (a replace of a file MuPDF still held open, `PATHEXT` casing in a
+test, and the same `.EXE` spelling in path comparisons) are fixed.
+
+Not yet verified: the winget, scoop and Chocolatey package identifiers
+were only exercised in the dry run, so a wrong identifier would show up as
+one failed install rather than a script failure; the Inno Setup script has
+not been compiled; and nothing has run on a Windows desktop with a
+display, only on the headless runner.
 
 ## Usage
 
