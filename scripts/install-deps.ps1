@@ -144,9 +144,11 @@ function Test-PackageId([string]$m, [string]$id) {
             return [bool]($out -match ("^" + [regex]::Escape($id) + "\|"))
         }
         "scoop" {
+            # scoop search returns objects in recent versions; Out-String renders
+            # the table so the package name is the first token of its row.
             $name = ($id -split "/")[-1]
-            $out = scoop search $name 2>$null
-            return [bool]($out -match ("(^|\s)" + [regex]::Escape($name) + "(\s|$)"))
+            $out = (scoop search $name 6>&1 2>$null | Out-String -Width 300)
+            return [bool]($out -match ("(?m)^\s*" + [regex]::Escape($name) + "\s"))
         }
     }
     return $false
