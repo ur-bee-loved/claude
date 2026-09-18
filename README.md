@@ -41,6 +41,30 @@ make install                  # pip install + desktop entry, icon, metainfo
 omniconv doctor               # shows what was detected
 ```
 
+`install-deps.sh -n` prints what it would install without changing
+anything. The script checks which tools are already on your `PATH` and
+requests only the packages for the missing ones, asks the package manager
+to skip anything it cannot resolve rather than abort, and then retries any
+tool still missing one package at a time (trying alternative package names
+in turn). A single conflicting or misnamed package therefore never blocks
+the rest of the list. Re-run the script after adding a repository, or after
+a failed run, and it picks up where it left off.
+
+The apt package names were exercised on Ubuntu 24.04. The dnf, pacman and
+zypper names follow those distributions' conventions but were not all
+verified on a live system; a wrong name costs one error line in the retry
+stage and nothing else.
+
+**Fedora note.** Fedora's own `ffmpeg-free` lacks the x264 and x265
+encoders, so MP4 output uses the MPEG-4 Part 2 codec until you enable RPM
+Fusion and run `sudo dnf swap ffmpeg-free ffmpeg --allowerasing`. The
+installer never requests `ffmpeg` when any ffmpeg is already present,
+precisely to avoid the conflict between the two packages.
+
+**Debian and Ubuntu note.** Chromium is not requested through apt because
+Ubuntu ships it as a snap; install it however you prefer if you want the
+headless-browser HTML renderer. Typst is not packaged for Ubuntu 24.04.
+
 `make install` installs into `~/.local`; use `sudo make install
 PREFIX=/usr/local` for a system-wide install. To try it without installing:
 
