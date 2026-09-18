@@ -51,10 +51,11 @@ param(
 $ErrorActionPreference = "Continue"
 
 # probe (command names, comma separated) | extra paths to check (globs, ; separated) | winget id | scoop package | choco package
+# A manager field may list alternatives separated by commas; they are tried in order.
 $Table = @'
 ffmpeg||Gyan.FFmpeg|ffmpeg|ffmpeg
 magick|%ProgramFiles%\ImageMagick*\magick.exe|ImageMagick.ImageMagick|imagemagick|imagemagick
-gswin64c,gswin32c|%ProgramFiles%\gs\gs*\bin\gswin64c.exe|ArtifexSoftware.GhostScript|ghostscript|ghostscript
+gswin64c,gswin32c|%ProgramFiles%\gs\gs*\bin\gswin64c.exe|ArtifexSoftware.GhostScript,ArtifexSoftware.Ghostscript|ghostscript|ghostscript
 pdftoppm|%LOCALAPPDATA%\Microsoft\WinGet\Packages\*Poppler*\*\Library\bin\pdftoppm.exe|oschwartz10612.Poppler|poppler|poppler
 pandoc|%LOCALAPPDATA%\Pandoc\pandoc.exe;%ProgramFiles%\Pandoc\pandoc.exe|JohnMacFarlane.Pandoc|pandoc|pandoc
 soffice|%ProgramFiles%\LibreOffice\program\soffice.exe|TheDocumentFoundation.LibreOffice|extras/libreoffice|libreoffice-fresh
@@ -69,8 +70,8 @@ typst||Typst.Typst|typst|-
 pdflatex|%LOCALAPPDATA%\Programs\MiKTeX\miktex\bin\x64\pdflatex.exe;%ProgramFiles%\MiKTeX\miktex\bin\x64\pdflatex.exe|MiKTeX.MiKTeX|latex|miktex
 wkhtmltopdf|%ProgramFiles%\wkhtmltopdf\bin\wkhtmltopdf.exe|wkhtmltopdf.wkhtmltox|extras/wkhtmltopdf|wkhtmltopdf
 sox||ChrisBagwell.SoX|sox|sox.portable
-fluidsynth||FluidSynth.FluidSynth|fluidsynth|-
-potrace||-|potrace|potrace
+fluidsynth||-|fluidsynth|-
+potrace||-|potrace|-
 cwebp||-|libwebp|-
 optipng||-|optipng|optipng
 gifsicle||-|gifsicle|gifsicle
@@ -161,11 +162,13 @@ if ($CheckIds) {
         $f = $line.Split("|")
         $ids = @{ winget = $f[2]; scoop = $f[3]; choco = $f[4] }
         foreach ($m in $managers) {
-            $id = $ids[$m]
-            if (-not $id -or $id -eq "-") { continue }
-            $found = Test-PackageId $m $id
-            Write-Host ("  {0,-7} {1,-38} {2}" -f $m, $id, $(if ($found) { "ok" } else { "NOT FOUND" }))
-            if (-not $found) { $bad += "$m`:$id" }
+            $field = $ids[$m]
+            if (-not $field -or $field -eq "-") { continue }
+            foreach ($id in $field.Split(",")) {
+                $found = Test-PackageId $m $id
+                Write-Host ("  {0,-7} {1,-38} {2}" -f $m, $id, $(if ($found) { "ok" } else { "NOT FOUND" }))
+                if (-not $found) { $bad += "$m`:$id" }
+            }
         }
     }
     Write-Host ""
@@ -191,7 +194,7 @@ foreach ($line in $Table -split "`n") {
         Write-Host ("  present  {0}" -f $short)
     } else {
         $missing += ,@($probe, $ids)
-        $avail = ($managers | Where-Object { $ids[$_] -ne "-" -and $ids[$_] } | ForEach-Object { "$_`:$($ids[$_])" }) -join ", "
+        $avail = ($managers | Where-Object { $ids[$_] -ne "-" -and $ids[$_] } | ForEach-Object { "$_`:$($ids[$_].Replace(',', ' or '))" }) -join ", "
         if ($avail) { Write-Host ("  missing  {0,-14} -> {1}" -f $short, $avail) }
         else { Write-Host ("  skipped  {0} (no package in {1})" -f $short, ($managers -join "/")) }
     }
@@ -205,15 +208,18 @@ foreach ($entry in $missing) {
     $probe = $entry[0]; $ids = $entry[1]; $short = $probe.Split(",")[0]
     $done = $false
     foreach ($m in $managers) {
-        $id = $ids[$m]
-        if (-not $id -or $id -eq "-") { continue }
-        Write-Host "  $short via $m ($id)"
-        $ok = switch ($m) {
-            "winget" { Invoke-Step @("winget", "install", "--id", $id, "-e", "--silent", "--accept-package-agreements", "--accept-source-agreements") }
-            "scoop"  { Invoke-Step @("scoop", "install", $id) }
-            "choco"  { Invoke-Step @("choco", "install", $id, "-y", "--no-progress") }
+        $field = $ids[$m]
+        if (-not $field -or $field -eq "-") { continue }
+        foreach ($id in $field.Split(",")) {
+            Write-Host "  $short via $m ($id)"
+            $ok = switch ($m) {
+                "winget" { Invoke-Step @("winget", "install", "--id", $id, "-e", "--silent", "--accept-package-agreements", "--accept-source-agreements") }
+                "scoop"  { Invoke-Step @("scoop", "install", $id) }
+                "choco"  { Invoke-Step @("choco", "install", $id, "-y", "--no-progress") }
+            }
+            if ($ok) { $done = $true; $installed++; break }
         }
-        if ($ok) { $done = $true; $installed++; break }
+        if ($done) { break }
     }
     if (-not $done -and ($managers | Where-Object { $ids[$_] -and $ids[$_] -ne "-" })) { $failed += $short }
 }
