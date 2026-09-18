@@ -101,7 +101,9 @@ function Test-Tool([string]$probe, [string]$paths) {
 
 function Invoke-Step([string[]]$cmd) {
     if ($DryRun) { Write-Host "  [dry-run] $($cmd -join ' ')"; return $true }
-    & $cmd[0] $cmd[1..($cmd.Length - 1)]
+    # Send the tool's own output to the host rather than the pipeline, so the
+    # caller receives only the boolean and $LASTEXITCODE reflects the tool.
+    & $cmd[0] $cmd[1..($cmd.Length - 1)] 2>&1 | Out-Host
     return ($LASTEXITCODE -eq 0)
 }
 
@@ -171,7 +173,8 @@ if ($py) {
     # No --user: pip falls back to a per-user install by itself when the
     # Python installation is not writable, and a plain install keeps the
     # omniconv command on PATH for per-user Python installations.
-    Invoke-Step (@($py, "-m", "pip", "install", "--upgrade") + $PyPkgs.Split(" ")) | Out-Null
+    $pipOk = Invoke-Step (@($py, "-m", "pip", "install", "--upgrade") + $PyPkgs.Split(" "))
+    if (-not $pipOk) { Write-Host "  pip reported an error; re-run the command above by hand to see why." }
 } else {
     Write-Host "  python not found yet; re-run this script after Python is installed (a new terminal is needed for PATH changes)."
 }
