@@ -149,10 +149,11 @@ managers' shim folders, MSYS2, and the Windows *App Paths* registry.
 `Omniconv.exe` (the window, no console) and `omniconv.exe` (the command
 line) using PyInstaller, and when Inno Setup is installed also
 `dist\Omniconv-Setup.exe`, an installer with Start Menu and desktop
-shortcuts, an optional `PATH` entry, an Explorer *Send to* entry and an
-offer to run the dependency installer. The GitHub Actions workflow builds
-the same executables on every pull request and attaches them as the
-`Omniconv-windows` artifact.
+shortcuts, an optional `PATH` entry, an Explorer *Send to* entry, an
+"Open with" registration for common formats and an offer to run the
+dependency installer. The GitHub Actions workflow builds the same
+executables and the installer on every pull request and attaches them as
+the `Omniconv-windows` and `Omniconv-windows-installer` artifacts.
 
 ### Windows-specific behaviour
 
@@ -186,9 +187,11 @@ all, so the installer obtains it through scoop or Chocolatey and otherwise
 points at the ghostscript.com download. The scoop names were not
 checked, because scoop is not on the runner.
 
-Not yet verified: the Inno Setup script has not been compiled, and
-nothing has run on a Windows desktop with a display, only on the headless
-runner.
+The Inno Setup script is compiled on the same runner and the resulting
+`Omniconv-Setup.exe` is uploaded, so the installer builds; what the
+installer does when run (shortcuts, `PATH`, *Send to*, "Open with") has
+not been exercised, and nothing has run on a Windows desktop with a
+display, only on the headless runner.
 
 ## Usage
 
