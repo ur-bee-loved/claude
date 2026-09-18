@@ -50,6 +50,19 @@ def install_hint() -> str:
     return "sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1   (or: pip install PySide6)"
 
 
+def _report(message: str) -> None:
+    """Print to stderr and, on Windows, also show a native message box: the
+    windowed launcher has no console, so stderr alone would be invisible."""
+    print(message, file=sys.stderr)
+    if platform.IS_WINDOWS:
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(None, message, "Omniconv", 0x10)  # MB_ICONERROR
+        except Exception:
+            pass
+
+
 def run(files: list[str] | None = None) -> int:
     tk = choose_toolkit()
     if tk == "gtk":
@@ -57,7 +70,7 @@ def run(files: list[str] | None = None) -> int:
     elif tk == "qt":
         from omniconv.gui.qt_app import run_app
     else:
-        print("no GUI toolkit found; install one with: " + install_hint(), file=sys.stderr)
+        _report("No GUI toolkit found. Install one with:\n\n  " + install_hint())
         return 1
     return run_app(files)
 
@@ -65,4 +78,10 @@ def run(files: list[str] | None = None) -> int:
 def main() -> int:
     """Entry point for the ``omniconv-gui`` launcher (a windowed executable
     on Windows, so there is no console to print to on failure)."""
-    return run(sys.argv[1:])
+    try:
+        return run(sys.argv[1:])
+    except Exception:
+        import traceback
+
+        _report("Omniconv could not start:\n\n" + traceback.format_exc())
+        return 1
