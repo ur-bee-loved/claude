@@ -83,7 +83,9 @@ def test_shim_directory_is_searched(fake_windows, tmp_path):
     shims = tmp_path / "shims"
     bare, exe = _shim(shims, "qpdf")
     assert shutil.which("qpdf") is None
-    assert platform.find_executable("qpdf") in (str(bare), str(exe))
+    found = platform.find_executable("qpdf")
+    # Windows may report the PATHEXT spelling (qpdf.EXE); compare case-insensitively.
+    assert found is not None and os.path.normcase(found) in {os.path.normcase(str(bare)), os.path.normcase(str(exe))}
 
 
 def test_version_key_orders_numerically():
