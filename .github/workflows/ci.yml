@@ -9,6 +9,7 @@ jobs:
   linux:
     name: Linux (Ubuntu)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -30,6 +31,7 @@ jobs:
   windows:
     name: Windows
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -37,6 +39,8 @@ jobs:
           python-version: "3.12"
       - name: Install system backends (Chocolatey)
         shell: pwsh
+        # A stalled download once held this step for 47 minutes; fail fast instead.
+        timeout-minutes: 12
         run: |
           choco install ffmpeg imagemagick ghostscript poppler pandoc qpdf 7zip graphviz -y --no-progress
       - name: Install Python backends
