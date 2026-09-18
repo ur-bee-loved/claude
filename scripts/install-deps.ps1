@@ -152,6 +152,32 @@ function Test-PackageId([string]$m, [string]$id) {
     return $false
 }
 
+function Suggest-PackageId([string]$m, [string]$id) {
+    # Non-exact, case-insensitive search so a misspelt identifier reports
+    # what the catalogue actually calls the package.
+    try {
+        switch ($m) {
+            "winget" {
+                $needle = ($id -split "\.")[-1]
+                $out = winget search --id $needle --source winget --accept-source-agreements --disable-interactivity 2>$null
+                $found = @()
+                foreach ($l in ($out -split "`n")) {
+                    if ($l -match "\s(\S+\.\S+)\s+\S+\s+winget\s*$") { $found += $matches[1] }
+                }
+                return ($found | Select-Object -First 3) -join ", "
+            }
+            "choco" {
+                $needle = ($id -split "\.")[0]
+                $out = choco search $needle --limit-output 2>$null
+                $found = @()
+                foreach ($l in ($out -split "`n")) { if ($l -match "^([^|]+)\|") { $found += $matches[1] } }
+                return ($found | Select-Object -First 3) -join ", "
+            }
+        }
+    } catch { }
+    return ""
+}
+
 if ($CheckIds) {
     Write-Host ""
     Write-Host "Checking package identifiers against: $($managers -join ', ')"
@@ -167,7 +193,11 @@ if ($CheckIds) {
             foreach ($id in $field.Split(",")) {
                 $found = Test-PackageId $m $id
                 Write-Host ("  {0,-7} {1,-38} {2}" -f $m, $id, $(if ($found) { "ok" } else { "NOT FOUND" }))
-                if (-not $found) { $bad += "$m`:$id" }
+                if (-not $found) {
+                    $bad += "$m`:$id"
+                    $hint = Suggest-PackageId $m $id
+                    if ($hint) { Write-Host ("  {0,-7} {1,-38} catalogue has: {2}" -f "", "", $hint) }
+                }
             }
         }
     }
