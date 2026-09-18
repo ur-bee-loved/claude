@@ -103,3 +103,30 @@ jobs:
           name: Omniconv-windows-installer
           path: dist/Omniconv-Setup.exe
           if-no-files-found: error
+      - name: Install, verify and uninstall silently
+        shell: pwsh
+        run: |
+          $setup = Resolve-Path dist\Omniconv-Setup.exe
+          $p = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS="addtopath,sendto"' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "setup exited with $($p.ExitCode)" }
+          $app = "$env:ProgramFiles\Omniconv"
+          if (-not (Test-Path "$app\Omniconv.exe")) { throw "Omniconv.exe not installed" }
+          if (-not (Test-Path "$app\omniconv.exe")) { throw "omniconv.exe not installed" }
+          & "$app\omniconv.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw "installed CLI failed" }
+          $menu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Omniconv\Omniconv.lnk"
+          if (-not (Test-Path $menu)) { throw "Start Menu shortcut missing: $menu" }
+          $sendto = "$env:APPDATA\Microsoft\Windows\SendTo\Omniconv.lnk"
+          if (-not (Test-Path $sendto)) { throw "Send to shortcut missing: $sendto" }
+          $openwith = Get-ItemProperty "HKCU:\Software\Classes\Applications\Omniconv.exe\SupportedTypes" -ErrorAction Stop
+          if (-not ($openwith.PSObject.Properties.Name -contains ".png")) { throw "Open with registration missing .png" }
+          $userPath = (Get-ItemProperty HKCU:\Environment).Path
+          if ($userPath -notlike "*Omniconv*") { throw "PATH entry missing; user PATH is: $userPath" }
+          Write-Host "install verified: program, shortcuts, Open with, PATH"
+          $unins = Get-ChildItem "$app\unins*.exe" | Select-Object -First 1
+          $u = Start-Process -FilePath $unins.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          if ($u.ExitCode -ne 0) { throw "uninstall exited with $($u.ExitCode)" }
+          Start-Sleep -Seconds 3
+          if (Test-Path "$app\Omniconv.exe") { throw "Omniconv.exe still present after uninstall" }
+          if (Test-Path "HKCU:\Software\Classes\Applications\Omniconv.exe") { throw "Open with registration not removed" }
+          Write-Host "uninstall verified"
