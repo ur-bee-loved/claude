@@ -204,18 +204,27 @@ Four further checks run there because they can only fail on Windows:
 
 The Windows-only bugs this surfaced are fixed: a replace of a file MuPDF
 still held open, `PATHEXT` casing in a test and in path comparisons, a
-sidebar that clipped at the window's minimum size because the Windows
-font metrics are wider than the Linux ones, and the code page failure
-above.
+and the code page failure above.
 
-One caveat on that last one. It was found on the runner under Qt's
-offscreen platform, which on Windows has no font database: the window was
-drawn, and measured, with a font that has no glyphs, so the width it
-produced was not Segoe UI's. The fix does not depend on the number, since
-the minimum is derived from the sidebar's own hint at runtime, and the
-layout now runs a second time on the native plugin, where the metrics are
-the real ones. The screenshot script fails outright on an empty font
-database so this cannot go unnoticed again.
+One that looked like a Windows defect was not one. A layout test failed on
+the runner saying the sidebar needed 426 px in a 306 px pane, which was
+put down to Segoe UI being wider than the Linux default. It was measured
+under Qt's offscreen platform, which on Windows has no font database: the
+window was drawn, and measured, with a font that has no glyphs, and
+missing-glyph boxes are em-width squares, far wider than real letters.
+Measured on the native plugin, Segoe UI is *narrower* than the Linux
+default — "Convert to" is 56 px against 63 — the sidebar needs 219 px
+against Linux's 220, and the window's minimum is 700x440 on both. The
+sidebar that really did clip at the minimum size was the Linux one, fixed
+by letting its labels wrap.
+
+What remains from that episode is worth keeping: the window's minimum is
+derived from the sidebar's own hint rather than fixed, so no font can
+clip it, and a test drives that over a range of font sizes. The layout
+also runs a second time on the native plugin, `scripts/report-layout.py`
+prints the resolved font and the widths behind the assertions, and the
+screenshot script fails outright on an empty font database, so a
+measurement against a glyph-less font cannot pass unnoticed again.
 
 Every winget, scoop and Chocolatey identifier in `install-deps.ps1` is
 checked against the live catalogues by `install-deps.ps1 -CheckIds`,
