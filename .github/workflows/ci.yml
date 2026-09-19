@@ -68,6 +68,14 @@ jobs:
         run: |
           xvfb-run -a .venv-gtk/bin/python -m omniconv gui --self-test | tee self-test.txt
           grep -q "^window: 'Omniconv'" self-test.txt || { echo "the self-test did not build a window"; exit 1; }
+      - name: Render the GTK window
+        run: xvfb-run -a .venv-gtk/bin/python scripts/gtk-screenshot.py screenshots
+      - name: Upload GTK screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-gtk
+          path: screenshots/
+          if-no-files-found: error
 
   windows:
     name: Windows
