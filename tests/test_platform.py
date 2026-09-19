@@ -155,3 +155,20 @@ def test_reveal_opens_the_folder_elsewhere(monkeypatch, tmp_path):
     monkeypatch.setattr(platform, "open_in_file_manager", opened.append)
     platform.reveal_in_file_manager(tmp_path / "a.png")
     assert opened == [tmp_path]
+
+
+def test_processes_are_spawned_in_one_place_only(monkeypatch):
+    """Anything spawning a subprocess outside procs.run would flash a
+    console window on Windows, because that is where the flags to suppress
+    it are applied. platform.py is exempt: it launches the file manager,
+    which is a windowed program."""
+    import re
+
+    root = Path(platform.__file__).resolve().parent.parent
+    pattern = re.compile(r"subprocess\.(run|Popen|call|check_output|check_call)")
+    offenders = sorted(
+        str(path.relative_to(root))
+        for path in root.rglob("*.py")
+        if path.name not in ("procs.py", "platform.py") and pattern.search(path.read_text(encoding="utf-8"))
+    )
+    assert offenders == [], offenders
