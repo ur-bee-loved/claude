@@ -148,17 +148,23 @@ managers' shim folders, MSYS2, and the Windows *App Paths* registry.
 `packaging\windows\build.ps1` produces `dist\Omniconv\` with
 `omniconvw.exe` (the window, no console) and `omniconv.exe` (the command
 line) using PyInstaller. The names follow the `python`/`pythonw`
-convention: they must differ by more than letter case, because Windows
-filenames are case-insensitive and two such names are one file, and when Inno Setup is installed also
+convention, and they have to differ by more than letter case: Windows
+filenames are case-insensitive, so two names differing only in case are
+one file and one build overwrites the other.
+
+With Inno Setup installed the script also produces
 `dist\Omniconv-Setup.exe`, an installer with Start Menu and desktop
 shortcuts, an optional `PATH` entry, an Explorer *Send to* entry, an
 "Open with" registration for common formats and an offer to run the
 dependency installer. It installs for the current user by default, so it
 needs no administrator prompt and its per-user `PATH`, *Send to* and
 "Open with" entries belong to the person using it; the wizard still
-offers an all-users install, which registers for the machine instead. The GitHub Actions workflow builds the same
-executables and the installer on every pull request and attaches them as
-the `Omniconv-windows` and `Omniconv-windows-installer` artifacts.
+offers an all-users install, which registers for the machine instead.
+
+The GitHub Actions workflow builds the same executables and the installer
+on every pull request, checks that an installed copy converts a file, and
+attaches them as the `Omniconv-windows` and `Omniconv-windows-installer`
+artifacts.
 
 ### Windows-specific behaviour
 

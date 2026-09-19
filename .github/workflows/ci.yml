@@ -276,6 +276,20 @@ jobs:
             if ($info -notmatch ": $expected \(") { throw "$($f.Name) was not identified as $expected. $info" }
           }
           Write-Host "frozen binary converted and re-identified $($made.Count) files"
+          # A two-hop route and a merge, neither of which the single-step
+          # cases above reach: routing writes an intermediate file, and a
+          # merge takes several inputs into one output.
+          $multi = Join-Path $work "multi"
+          New-Item -ItemType Directory -Force -Path $multi | Out-Null
+          & $exe convert "$work\sample.txt" --to webp --output $multi
+          if ($LASTEXITCODE -ne 0) { throw "the two-hop text to WebP route failed" }
+          if (-not (Test-Path "$multi\sample.webp")) { throw "the two-hop route produced no WebP" }
+          python -c "import sys; from PIL import Image; Image.new('RGB', (40, 30), 'coral').save(sys.argv[1])" "$multi\second.png"
+          & $exe merge "$work\sample.png" "$multi\second.png" -o "$multi\merged.pdf"
+          if ($LASTEXITCODE -ne 0) { throw "the merge failed" }
+          $pages = (& $exe info "$multi\merged.pdf" | Out-String)
+          if ($pages -notmatch "pages: 2") { throw "the merged PDF does not have two pages. $pages" }
+          Write-Host "frozen binary routed two hops and merged two images into one PDF"
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
         with:
