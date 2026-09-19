@@ -297,6 +297,25 @@ def open_in_file_manager(path: Path) -> None:
         subprocess.Popen(["xdg-open", str(path)])
 
 
+def reveal_in_file_manager(path: Path) -> None:
+    """Open the containing folder with the file selected, where the
+    platform offers that."""
+    import subprocess
+
+    if IS_WINDOWS:
+        # Explorer wants /select and the path as one argument and rejects
+        # the quoting subprocess would apply to a list, so the command line
+        # is built here. No shell is involved, and a Windows file name
+        # cannot contain a quotation mark.
+        subprocess.Popen(f'explorer /select,"{path}"')
+        return
+    if IS_MAC:
+        subprocess.Popen(["open", "-R", str(path)])
+        return
+    # No portable way to select a file on Linux; open the folder instead.
+    open_in_file_manager(path.parent)
+
+
 def user_data_dir(app: str = "omniconv") -> Path:
     if IS_WINDOWS:
         base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~\\AppData\\Local")

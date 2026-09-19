@@ -510,7 +510,7 @@ class MainWindow(QtWidgets.QMainWindow):
         items = self.file_list.selectedItems()
         if items:
             entry: FileEntry = items[0].data(0, Qt.ItemDataRole.UserRole)
-            platform.open_in_file_manager(entry.path.parent)
+            platform.reveal_in_file_manager(entry.path)
 
     # ------------------------------------------------------------- files
     def open_file_dialog(self) -> None:

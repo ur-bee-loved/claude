@@ -131,3 +131,27 @@ def test_console_is_left_alone_off_windows(monkeypatch):
     before = sys.stdout.encoding
     platform.configure_console()
     assert sys.stdout.encoding == before
+
+
+def test_reveal_selects_the_file_on_windows(monkeypatch):
+    """Explorer rejects the quoting subprocess applies to a list, so the
+    command line is built by hand and must stay that way."""
+    import subprocess
+
+    calls = []
+    monkeypatch.setattr(platform, "IS_WINDOWS", True)
+    monkeypatch.setattr(platform, "IS_MAC", False)
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: calls.append((a, k)))
+    platform.reveal_in_file_manager(Path(r"C:\My Files\holiday photo.png"))
+    (args, _), = calls
+    assert args[0] == 'explorer /select,"C:\\My Files\\holiday photo.png"'
+    assert isinstance(args[0], str), "a list would be requoted by subprocess"
+
+
+def test_reveal_opens_the_folder_elsewhere(monkeypatch, tmp_path):
+    opened = []
+    monkeypatch.setattr(platform, "IS_WINDOWS", False)
+    monkeypatch.setattr(platform, "IS_MAC", False)
+    monkeypatch.setattr(platform, "open_in_file_manager", opened.append)
+    platform.reveal_in_file_manager(tmp_path / "a.png")
+    assert opened == [tmp_path]
