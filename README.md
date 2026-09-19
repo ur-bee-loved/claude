@@ -463,6 +463,40 @@ python3 -m pytest          # unit tests plus integration tests that skip
 python3 -m omniconv doctor
 ```
 
+### Looking at the window without a desktop
+
+Neither front end needs a display to be inspected, which is how the
+Windows window is checked at all from a Linux machine.
+
+```sh
+python3 scripts/gui-screenshot.py shots            # Qt, offscreen
+python3 scripts/gui-screenshot.py shots-dark --dark
+xvfb-run -a python3 scripts/gtk-screenshot.py shots-gtk   # GTK, needs a display
+python3 scripts/print-screenshot.py shots/02-files-added.png
+```
+
+The Qt script grabs the window empty, with files queued, after a real
+conversion, at its minimum size, with the sparse-install banner and with
+the backends dialog open. `--dark` approximates the palette Windows hands
+a dark-mode application. `print-screenshot.py` writes an image to standard
+output as base64, for reading a run from its log where the build artifacts
+are out of reach.
+
+CI renders both front ends on every run and uploads the images. Rendering
+the window is what found the empty-state hint sitting behind the file
+table, the sidebar clipping at the minimum window size, and the target
+picker losing its first characters.
+
+### Front ends in CI
+
+The GTK window needs PyGObject with the GTK 4 and libadwaita typelibs,
+which apt provides and pip does not, so its job builds a virtual
+environment with `--system-site-packages` and runs under Xvfb. The Qt
+window runs on the offscreen platform in the Linux and Windows jobs. The
+Windows job additionally converts real files with the frozen executable
+and with the installed copy, because a PyInstaller bundle can start
+perfectly well and still be missing the data files a conversion needs.
+
 ### Adding a backend
 
 Create a module in `omniconv/converters/`, decorate a function with
