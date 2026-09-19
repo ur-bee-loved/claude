@@ -90,7 +90,14 @@ def self_test_path():
     return platform.user_data_dir() / "self-test.log"
 
 
-def self_test() -> int:
+def _queued(entries) -> str:
+    """Reports what a file argument produced, which is how the Send-to and
+    Open-with entry points hand a file to the windowed executable."""
+    names = ", ".join(f"{e.path.name} as {e.format.name if e.format else 'unknown'}" for e in entries)
+    return f"queued {len(entries)} file(s): {names}"
+
+
+def self_test(files: list[str] | None = None) -> int:
     """Build the window without entering the event loop, and report what
     happened to a log file.
 
@@ -119,6 +126,10 @@ def self_test() -> int:
             window.show()
             app.processEvents()
             lines.append(f"window: {window.windowTitle()!r}, {len(REGISTRY.available())}/{len(REGISTRY.all())} backends")
+            if files:
+                window.add_paths(list(files))
+                app.processEvents()
+                lines.append(_queued(window.file_list.entries()))
             window.close()
         else:
             import gi
@@ -141,6 +152,9 @@ def self_test() -> int:
                 app.register(None)
                 window = MainWindow(application=app)
                 lines.append(f"window: {window.get_title()!r}, {backends}")
+                if files:
+                    window.add_paths(list(files))
+                    lines.append(_queued(window.entries))
                 window.destroy()
             else:
                 lines.append(f"no display: window class imported only, {backends}")
@@ -181,7 +195,7 @@ def main() -> int:
     on Windows, so there is no console to print to on failure)."""
     args = sys.argv[1:]
     if "--self-test" in args:
-        return self_test()
+        return self_test([a for a in args if a != "--self-test"])
     try:
         return run(args)
     except Exception:

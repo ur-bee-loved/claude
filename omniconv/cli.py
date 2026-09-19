@@ -270,7 +270,7 @@ def cmd_gui(args: argparse.Namespace) -> int:
 
         os.environ["OMNICONV_TOOLKIT"] = args.toolkit
     if getattr(args, "self_test", False):
-        return launcher.self_test()
+        return launcher.self_test(args.inputs)
     return launcher.run(args.inputs)
 
 

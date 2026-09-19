@@ -205,3 +205,14 @@ def test_context_menu_without_a_selection_offers_only_adding(window):
     labels = [a.text() for a in window.build_file_menu(QtCore.QPoint(0, 0)).actions() if not a.isSeparator()]
     assert all("Remove" not in t and "Clear" not in t for t in labels), labels
     assert any("Add" in t for t in labels), labels
+
+
+def test_self_test_reports_a_queued_file_argument(samples, capsys):
+    """Send to and Open with hand the windowed executable a file path;
+    the self-test is how that path is checked without a desktop."""
+    from omniconv.gui import launcher
+
+    assert launcher.self_test([str(samples / "sample.png")]) == 0
+    printed = capsys.readouterr().out
+    assert "queued 1 file(s): sample.png as png" in printed, printed
+    assert "self-test ok" in printed

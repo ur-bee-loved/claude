@@ -66,8 +66,10 @@ jobs:
         env:
           OMNICONV_TOOLKIT: gtk
         run: |
-          xvfb-run -a .venv-gtk/bin/python -m omniconv gui --self-test | tee self-test.txt
+          python3 -c "open('sample.txt', 'w').write('Omniconv self-test sample.\n')"
+          xvfb-run -a .venv-gtk/bin/python -m omniconv gui --self-test sample.txt | tee self-test.txt
           grep -q "^window: 'Omniconv'" self-test.txt || { echo "the self-test did not build a window"; exit 1; }
+          grep -q "queued 1 file" self-test.txt || { echo "the self-test did not queue the file argument"; exit 1; }
       - name: Render the GTK window
         run: xvfb-run -a .venv-gtk/bin/python scripts/gtk-screenshot.py screenshots
       - name: Upload GTK screenshots
@@ -216,17 +218,24 @@ jobs:
         # at once under the offscreen platform, so process lifetime proves
         # nothing. --self-test builds the window and reports to a log file.
         run: |
+          # A file argument is how Send to and Open with hand a file to the
+          # windowed executable, so the self-test takes one here.
+          $sample = Join-Path $env:RUNNER_TEMP "self-test-sample.png"
+          python -c "import sys; from PIL import Image; Image.new('RGB', (24, 24), 'orange').save(sys.argv[1])" $sample
           # The console binary first: its traceback is visible in the log.
-          dist\Omniconv\omniconv.exe gui --self-test
+          $out = (dist\Omniconv\omniconv.exe gui --self-test $sample | Out-String)
           if ($LASTEXITCODE -ne 0) { throw "console GUI self-test exited with $LASTEXITCODE" }
+          Write-Host $out
+          if ($out -notmatch "queued 1 file") { throw "the console self-test did not queue the file argument" }
           $log = "$env:LOCALAPPDATA\omniconv\self-test.log"
           Remove-Item $log -ErrorAction SilentlyContinue
-          $p = Start-Process -FilePath dist\Omniconv\omniconvw.exe -ArgumentList '--self-test' -PassThru
+          $p = Start-Process -FilePath dist\Omniconv\omniconvw.exe -ArgumentList '--self-test', $sample -PassThru
           if (-not $p.WaitForExit(120000)) { Stop-Process -Id $p.Id -Force; throw "self-test did not finish within 120 s" }
           if (Test-Path $log) { Write-Host "--- self-test.log ---"; Get-Content $log } else { Write-Host "no self-test.log written" }
           if ($p.ExitCode -ne 0) { throw "bundled GUI self-test exited with $($p.ExitCode)" }
           if (-not (Select-String -Path $log -Pattern 'self-test ok' -Quiet)) { throw "self-test log does not report success" }
-          Write-Host "bundled GUI self-test passed"
+          if (-not (Select-String -Path $log -Pattern 'queued 1 file' -Quiet)) { throw "the windowed self-test did not queue the file argument" }
+          Write-Host "bundled GUI self-test passed, including a file argument"
       - name: Convert real files with the frozen executable
         shell: pwsh
         # Building the window proves the bundle starts; only a conversion
