@@ -216,3 +216,17 @@ def test_self_test_reports_a_queued_file_argument(samples, capsys):
     printed = capsys.readouterr().out
     assert "queued 1 file(s): sample.png as png" in printed, printed
     assert "self-test ok" in printed
+
+
+def test_right_click_on_an_unselected_row_targets_it(window, samples):
+    """Right-clicking a row people have not selected first is the common
+    case, so that row has to become the one the menu acts on."""
+    window.add_paths([str(samples / "sample.txt"), str(samples / "sample.md")])
+    second = window.file_list.topLevelItem(1)
+    window.file_list.clearSelection()
+    menu = window.build_file_menu(window.file_list.visualItemRect(second).center())
+    assert second.isSelected()
+    remove = next(a for a in menu.actions() if "Remove" in a.text())
+    assert remove.isEnabled()
+    remove.trigger()
+    assert [e.path.name for e in window.file_list.entries()] == ["sample.txt"]
