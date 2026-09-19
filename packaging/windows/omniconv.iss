@@ -5,7 +5,8 @@
 
 #define AppName "Omniconv"
 #define AppVersion "0.1.0"
-#define AppExe "Omniconv.exe"
+; The windowed build; omniconv.exe beside it is the console one.
+#define AppExe "omniconvw.exe"
 
 [Setup]
 SourceDir=..\..
@@ -62,9 +63,9 @@ var
   P: Integer;
   Base: string;
 begin
-  Base := 'Software\Classes\Applications\Omniconv.exe';
+  Base := 'Software\Classes\Applications\omniconvw.exe';
   RegWriteStringValue(HKEY_CURRENT_USER, Base, 'FriendlyAppName', 'Omniconv');
-  RegWriteStringValue(HKEY_CURRENT_USER, Base + '\shell\open\command', '', '"' + ExpandConstant('{app}\Omniconv.exe') + '" "%1"');
+  RegWriteStringValue(HKEY_CURRENT_USER, Base + '\shell\open\command', '', '"' + ExpandConstant('{app}\omniconvw.exe') + '" "%1"');
   Types := OpenWithTypes + ' ';
   while Length(Types) > 0 do
   begin
@@ -85,7 +86,7 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usPostUninstall then
-    RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Classes\Applications\Omniconv.exe');
+    RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Classes\Applications\omniconvw.exe');
 end;
 
 function NeedsAddPath(Param: string): boolean;

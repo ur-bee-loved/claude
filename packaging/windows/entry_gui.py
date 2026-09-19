@@ -1,4 +1,4 @@
-"""PyInstaller entry point for the windowed Omniconv.exe.
+"""PyInstaller entry point for the windowed omniconvw.exe.
 
 A windowed executable has no console, so Python's standard streams are
 ``None`` and anything written to them, including tracebacks raised inside

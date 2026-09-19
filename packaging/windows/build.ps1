@@ -3,7 +3,7 @@
     Build a stand-alone Windows distribution of Omniconv.
 
 .DESCRIPTION
-    Produces dist\Omniconv\ with Omniconv.exe (GUI) and omniconv.exe (CLI),
+    Produces dist\Omniconv\ with omniconvw.exe (GUI) and omniconv.exe (CLI),
     and, when Inno Setup's ISCC.exe is installed, dist\Omniconv-Setup.exe.
     The external tools (ffmpeg, ImageMagick, ...) are not bundled; run
     scripts\install-deps.ps1 on the target machine or let the Setup wizard
@@ -25,7 +25,7 @@ if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
 
 pyinstaller --noconfirm --clean packaging\windows\omniconv.spec
 if ($LASTEXITCODE -ne 0) { throw "pyinstaller failed" }
-Write-Host "Built dist\Omniconv\Omniconv.exe and dist\Omniconv\omniconv.exe"
+Write-Host "Built dist\Omniconv\omniconvw.exe (window) and dist\Omniconv\omniconv.exe (command line)"
 
 if (-not $SkipInstaller) {
     $iscc = Get-Command ISCC.exe -ErrorAction SilentlyContinue

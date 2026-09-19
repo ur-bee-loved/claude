@@ -1,8 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller specification: builds dist/Omniconv/ containing
 
-    Omniconv.exe   windowed GUI (no console)
+    omniconvw.exe  windowed GUI (no console)
     omniconv.exe   console CLI
+
+The two names follow the python/pythonw convention and must differ by more
+than letter case: Windows filenames are case-insensitive, so naming the
+windowed build "Omniconv.exe" made it the same file as "omniconv.exe" and
+the console binary silently overwrote it.
 
 Run from the repository root:  pyinstaller packaging/windows/omniconv.spec
 The converters are imported dynamically by name, so every backend module
@@ -46,7 +51,7 @@ a_cli = Analysis([str(ROOT / "packaging" / "windows" / "entry_cli.py")], pathex=
 pyz_gui = PYZ(a_gui.pure)
 pyz_cli = PYZ(a_cli.pure)
 
-exe_gui = EXE(pyz_gui, a_gui.scripts, [], exclude_binaries=True, name="Omniconv", console=False, icon=ICON, upx=False)
+exe_gui = EXE(pyz_gui, a_gui.scripts, [], exclude_binaries=True, name="omniconvw", console=False, icon=ICON, upx=False)
 exe_cli = EXE(pyz_cli, a_cli.scripts, [], exclude_binaries=True, name="omniconv", console=True, icon=ICON, upx=False)
 
 coll = COLLECT(exe_gui, exe_cli, a_gui.binaries, a_gui.datas, a_cli.binaries, a_cli.datas, name="Omniconv", upx=False)

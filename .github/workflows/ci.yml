@@ -81,8 +81,13 @@ jobs:
         shell: pwsh
         run: |
           pyinstaller --noconfirm --clean packaging\windows\omniconv.spec
-          if (-not (Test-Path dist\Omniconv\Omniconv.exe)) { throw "GUI executable missing" }
+          if (-not (Test-Path dist\Omniconv\omniconvw.exe)) { throw "GUI executable missing" }
           if (-not (Test-Path dist\Omniconv\omniconv.exe)) { throw "CLI executable missing" }
+          # Windows filenames are case-insensitive: names differing only in case
+          # would be one file, so prove these two are really distinct builds.
+          $gui = (Get-FileHash dist\Omniconv\omniconvw.exe).Hash
+          $cli = (Get-FileHash dist\Omniconv\omniconv.exe).Hash
+          if ($gui -eq $cli) { throw "omniconvw.exe and omniconv.exe are the same file" }
           dist\Omniconv\omniconv.exe --version
           dist\Omniconv\omniconv.exe doctor
       - name: Self-test the bundled GUI
@@ -99,7 +104,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "console GUI self-test exited with $LASTEXITCODE" }
           $log = "$env:LOCALAPPDATA\omniconv\self-test.log"
           Remove-Item $log -ErrorAction SilentlyContinue
-          $p = Start-Process -FilePath dist\Omniconv\Omniconv.exe -ArgumentList '--self-test' -PassThru
+          $p = Start-Process -FilePath dist\Omniconv\omniconvw.exe -ArgumentList '--self-test' -PassThru
           if (-not $p.WaitForExit(120000)) { Stop-Process -Id $p.Id -Force; throw "self-test did not finish within 120 s" }
           if (Test-Path $log) { Write-Host "--- self-test.log ---"; Get-Content $log } else { Write-Host "no self-test.log written" }
           if ($p.ExitCode -ne 0) { throw "bundled GUI self-test exited with $($p.ExitCode)" }
@@ -134,7 +139,7 @@ jobs:
           $p = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS="addtopath,sendto"' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "setup exited with $($p.ExitCode)" }
           $app = "$env:ProgramFiles\Omniconv"
-          if (-not (Test-Path "$app\Omniconv.exe")) { throw "Omniconv.exe not installed" }
+          if (-not (Test-Path "$app\omniconvw.exe")) { throw "omniconvw.exe not installed" }
           if (-not (Test-Path "$app\omniconv.exe")) { throw "omniconv.exe not installed" }
           & "$app\omniconv.exe" --version
           if ($LASTEXITCODE -ne 0) { throw "installed CLI failed" }
@@ -142,7 +147,7 @@ jobs:
           if (-not (Test-Path $menu)) { throw "Start Menu shortcut missing: $menu" }
           $sendto = "$env:APPDATA\Microsoft\Windows\SendTo\Omniconv.lnk"
           if (-not (Test-Path $sendto)) { throw "Send to shortcut missing: $sendto" }
-          $openwith = Get-ItemProperty "HKCU:\Software\Classes\Applications\Omniconv.exe\SupportedTypes" -ErrorAction Stop
+          $openwith = Get-ItemProperty "HKCU:\Software\Classes\Applications\omniconvw.exe\SupportedTypes" -ErrorAction Stop
           if (-not ($openwith.PSObject.Properties.Name -contains ".png")) { throw "Open with registration missing .png" }
           $userPath = (Get-ItemProperty HKCU:\Environment).Path
           if ($userPath -notlike "*Omniconv*") { throw "PATH entry missing; user PATH is: $userPath" }
@@ -151,6 +156,6 @@ jobs:
           $u = Start-Process -FilePath $unins.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
           if ($u.ExitCode -ne 0) { throw "uninstall exited with $($u.ExitCode)" }
           Start-Sleep -Seconds 3
-          if (Test-Path "$app\Omniconv.exe") { throw "Omniconv.exe still present after uninstall" }
-          if (Test-Path "HKCU:\Software\Classes\Applications\Omniconv.exe") { throw "Open with registration not removed" }
+          if (Test-Path "$app\omniconvw.exe") { throw "omniconvw.exe still present after uninstall" }
+          if (Test-Path "HKCU:\Software\Classes\Applications\omniconvw.exe") { throw "Open with registration not removed" }
           Write-Host "uninstall verified"

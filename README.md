@@ -146,8 +146,10 @@ managers' shim folders, MSYS2, and the Windows *App Paths* registry.
 ### Stand-alone build
 
 `packaging\windows\build.ps1` produces `dist\Omniconv\` with
-`Omniconv.exe` (the window, no console) and `omniconv.exe` (the command
-line) using PyInstaller, and when Inno Setup is installed also
+`omniconvw.exe` (the window, no console) and `omniconv.exe` (the command
+line) using PyInstaller. The names follow the `python`/`pythonw`
+convention: they must differ by more than letter case, because Windows
+filenames are case-insensitive and two such names are one file, and when Inno Setup is installed also
 `dist\Omniconv-Setup.exe`, an installer with Start Menu and desktop
 shortcuts, an optional `PATH` entry, an Explorer *Send to* entry, an
 "Open with" registration for common formats and an offer to run the
@@ -173,7 +175,7 @@ passes (including real ffmpeg, ImageMagick, PyMuPDF and pandoc
 conversions and the headless Qt window), `omniconv doctor` finds 51
 backends, `install-deps.ps1 -DryRun` correctly recognises the nine tools
 already present and names the winget or Chocolatey package for each
-missing one, and PyInstaller builds `Omniconv.exe` and `omniconv.exe`,
+missing one, and PyInstaller builds `omniconvw.exe` and `omniconv.exe`,
 which then run `doctor` themselves. The three Windows-only bugs this
 surfaced (a replace of a file MuPDF still held open, `PATHEXT` casing in a
 test, and the same `.EXE` spelling in path comparisons) are fixed.
