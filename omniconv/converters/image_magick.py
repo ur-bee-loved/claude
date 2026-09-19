@@ -21,6 +21,9 @@ from omniconv.core.registry import converter
 from omniconv.core.requirements import Tool
 from omniconv.converters._common import tool_output
 
+# ImageMagick 7 ships "magick"; version 6 ships "convert". The platform
+# layer refuses to look up "convert" on Windows, where that name belongs to
+# the NTFS filesystem converter.
 MAGICK = Tool("magick", ("convert",), package="imagemagick")
 
 # ImageMagick coder name -> omniconv format name.

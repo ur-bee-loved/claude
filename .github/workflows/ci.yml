@@ -1,0 +1,386 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A run for an older commit on the same branch tells nobody anything once a
+# newer one exists, and the Windows job holds a runner for a quarter of an
+# hour.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux (Ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install system backends
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg imagemagick ghostscript poppler-utils pandoc qpdf img2pdf librsvg2-bin libegl1 libxkbcommon0 libgl1
+      - name: Install Python backends
+        run: python -m pip install -e ".[all,qt]" pytest
+      - name: Backend report
+        run: python -m omniconv doctor
+      - name: Tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q
+      - name: Render the window
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python scripts/gui-screenshot.py screenshots/light
+          python scripts/gui-screenshot.py screenshots/dark --dark
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-linux
+          path: screenshots/
+          if-no-files-found: error
+
+  linux-gtk:
+    name: Linux (GTK 4 front end)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GTK 4, libadwaita and a few backends
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1 xvfb ffmpeg imagemagick ghostscript poppler-utils
+      - name: Environment that can see the system typelibs
+        # PyGObject's typelibs come from apt, not pip, so the venv has to
+        # inherit the system packages.
+        run: |
+          python3 -m venv --system-site-packages .venv-gtk
+          .venv-gtk/bin/pip install --upgrade pip
+          .venv-gtk/bin/pip install -e ".[all]" pytest
+      - name: Prove PyGObject works, so the tests cannot skip unnoticed
+        run: |
+          .venv-gtk/bin/python -c "import gi; gi.require_version('Gtk','4.0'); gi.require_version('Adw','1'); from gi.repository import Adw, Gtk; print('PyGObject', gi.__version__, 'ok')"
+      - name: GTK tests under a virtual display
+        run: xvfb-run -a .venv-gtk/bin/python -m pytest tests/test_gtk_gui.py -q -rs
+      - name: GUI self-test builds the GTK window
+        env:
+          OMNICONV_TOOLKIT: gtk
+        run: |
+          python3 -c "open('sample.txt', 'w').write('Omniconv self-test sample.\n')"
+          xvfb-run -a .venv-gtk/bin/python -m omniconv gui --self-test sample.txt | tee self-test.txt
+          grep -q "^window: 'Omniconv'" self-test.txt || { echo "the self-test did not build a window"; exit 1; }
+          grep -q "queued 1 file" self-test.txt || { echo "the self-test did not queue the file argument"; exit 1; }
+      - name: Render the GTK window
+        run: xvfb-run -a .venv-gtk/bin/python scripts/gtk-screenshot.py screenshots
+      - name: Upload GTK screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-gtk
+          path: screenshots/
+          if-no-files-found: error
+      - name: Print a screenshot into the log
+        if: always()
+        run: |
+          test -f screenshots/02-files-added.png && .venv-gtk/bin/python scripts/print-screenshot.py screenshots/02-files-added.png || echo "no screenshot to print"
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install system backends (Chocolatey)
+        shell: pwsh
+        # A stalled download once held this step for 47 minutes; fail fast instead.
+        timeout-minutes: 12
+        run: |
+          choco install ffmpeg imagemagick ghostscript poppler pandoc qpdf 7zip graphviz -y --no-progress
+      - name: Install the heavier optional backends
+        shell: pwsh
+        # LibreOffice and calibre are the two backends with Windows-specific
+        # code in them (soffice.com with a profile URI, and calibre's
+        # Unix-only ownership check), so they need to run here at least once.
+        # Not fatal: these are large downloads.
+        continue-on-error: true
+        timeout-minutes: 15
+        run: choco install libreoffice-fresh calibre tesseract -y --no-progress
+      - name: Install Python backends
+        run: python -m pip install -e ".[all,qt]" pytest pyinstaller
+      - name: Backend report
+        shell: pwsh
+        run: |
+          # Chocolatey adds to PATH for new shells; refresh it here.
+          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+          refreshenv
+          python -m omniconv doctor
+      - name: Tests
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+          refreshenv
+          python -m pytest -q
+      - name: Convert through LibreOffice and calibre if they installed
+        shell: pwsh
+        # These two carry the only Windows-specific backend code. Skipped
+        # rather than failed when the optional install did not complete.
+        run: |
+          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+          refreshenv
+          $dir = Join-Path $env:RUNNER_TEMP "office"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          "Omniconv office backend check." | Out-File -Encoding utf8 "$dir\note.txt"
+          $report = python -m omniconv doctor | Out-String
+          foreach ($case in @(@("libreoffice", "docx"), @("calibre", "epub"))) {
+            $backend, $target = $case
+            if ($report -notmatch "(?m)^$backend\s+available") { Write-Host "$backend not installed, skipping"; continue }
+            python -m omniconv convert "$dir\note.txt" --to $target --backend $backend --output $dir
+            if ($LASTEXITCODE -ne 0) { throw "$backend could not convert to $target" }
+            $out = Get-ChildItem $dir -Filter "*.$target"
+            if (-not $out) { throw "$backend produced no .$target" }
+            Write-Host "$backend produced $($out.Name), $($out.Length) bytes"
+          }
+      - name: Convert a file whose name the code page cannot encode
+        shell: pwsh
+        # Redirected output on Windows uses the ANSI code page, so printing
+        # such a path used to raise UnicodeEncodeError before the conversion
+        # ran. Redirecting every stream to a file reproduces that.
+        run: |
+          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+          refreshenv
+          $dir = Join-Path $env:RUNNER_TEMP "unicode-names"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $name = [char]0x65E5 + [char]0x672C + [char]0x8A9E + "-caf" + [char]0xE9 + ".png"
+          python -c "import sys; from PIL import Image; Image.new('RGB', (32, 32), 'teal').save(sys.argv[1])" "$dir\$name"
+          python -m omniconv convert "$dir\$name" --to webp --output $dir *> "$dir\log.txt"
+          if ($LASTEXITCODE -ne 0) { Get-Content "$dir\log.txt"; throw "conversion of a non-ASCII name failed with $LASTEXITCODE" }
+          Get-Content "$dir\log.txt"
+          $out = Get-ChildItem $dir -Filter *.webp
+          if (-not $out) { throw "no WebP was produced" }
+          Write-Host "converted $($out.Name)"
+      - name: Render the window
+        shell: pwsh
+        # The native plugin, not offscreen: Qt's offscreen platform on
+        # Windows has no font database, so every glyph came out as a
+        # missing-glyph box and the layout was measured with the wrong
+        # metrics. The runner has a window station, so the real plugin
+        # works headlessly; offscreen stays as a fallback.
+        run: |
+          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+          refreshenv
+          $env:QT_QPA_PLATFORM = "windows"
+          python scripts\gui-screenshot.py screenshots\light
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::warning::the native Qt platform did not work; falling back to offscreen, whose fonts are not the real ones"
+            $env:QT_QPA_PLATFORM = "offscreen"
+            python scripts\gui-screenshot.py screenshots\light
+            if ($LASTEXITCODE -ne 0) { throw "the window could not be rendered on either platform" }
+          }
+          python scripts\gui-screenshot.py screenshots\dark --dark
+          if ($LASTEXITCODE -ne 0) { throw "the dark render failed" }
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-windows
+          path: screenshots/
+          if-no-files-found: error
+      - name: Measure the layout with the real Windows fonts
+        shell: pwsh
+        # The layout assertions run under offscreen with the rest of the
+        # suite, where the fonts are not Windows'. Run them once more on the
+        # native plugin so the widths they check are Segoe UI's.
+        run: |
+          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+          refreshenv
+          $env:QT_QPA_PLATFORM = "windows"
+          python -m pytest tests/test_qt_gui.py -q
+          if ($LASTEXITCODE -ne 0) { throw "the layout does not hold under the real Windows fonts" }
+      - name: Dry-run the dependency installer
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File scripts\install-deps.ps1 -DryRun
+      - name: Install scoop so its package names can be checked too
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Invoke-Expression "& {$(Invoke-RestMethod get.scoop.sh)} -RunAsAdmin"
+          $env:PATH = "$env:USERPROFILE\scoop\shims;$env:PATH"
+          scoop bucket add extras
+          scoop --version
+          "$env:USERPROFILE\scoop\shims" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+      - name: Check package identifiers against winget, scoop and Chocolatey
+        shell: pwsh
+        # Informational: catalogues change, so an unknown identifier is reported, not fatal.
+        continue-on-error: true
+        run: powershell -ExecutionPolicy Bypass -File scripts\install-deps.ps1 -CheckIds
+      - name: Build stand-alone executables
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean packaging\windows\omniconv.spec
+          if (-not (Test-Path dist\Omniconv\omniconvw.exe)) { throw "GUI executable missing" }
+          if (-not (Test-Path dist\Omniconv\omniconv.exe)) { throw "CLI executable missing" }
+          # Windows filenames are case-insensitive: names differing only in case
+          # would be one file, so prove these two are really distinct builds.
+          $gui = (Get-FileHash dist\Omniconv\omniconvw.exe).Hash
+          $cli = (Get-FileHash dist\Omniconv\omniconv.exe).Hash
+          if ($gui -eq $cli) { throw "omniconvw.exe and omniconv.exe are the same file" }
+          dist\Omniconv\omniconv.exe --version
+          dist\Omniconv\omniconv.exe doctor
+      - name: Self-test the bundled GUI
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          OMNICONV_NO_MSGBOX: "1"
+        # The windowed executable has no console and its event loop may return
+        # at once under the offscreen platform, so process lifetime proves
+        # nothing. --self-test builds the window and reports to a log file.
+        run: |
+          # A file argument is how Send to and Open with hand a file to the
+          # windowed executable, so the self-test takes one here.
+          $sample = Join-Path $env:RUNNER_TEMP "self-test-sample.png"
+          python -c "import sys; from PIL import Image; Image.new('RGB', (24, 24), 'orange').save(sys.argv[1])" $sample
+          # The console binary first: its traceback is visible in the log.
+          $out = (dist\Omniconv\omniconv.exe gui --self-test $sample | Out-String)
+          if ($LASTEXITCODE -ne 0) { throw "console GUI self-test exited with $LASTEXITCODE" }
+          Write-Host $out
+          if ($out -notmatch "queued 1 file") { throw "the console self-test did not queue the file argument" }
+          $log = "$env:LOCALAPPDATA\omniconv\self-test.log"
+          Remove-Item $log -ErrorAction SilentlyContinue
+          $p = Start-Process -FilePath dist\Omniconv\omniconvw.exe -ArgumentList '--self-test', $sample -PassThru
+          if (-not $p.WaitForExit(120000)) { Stop-Process -Id $p.Id -Force; throw "self-test did not finish within 120 s" }
+          if (Test-Path $log) { Write-Host "--- self-test.log ---"; Get-Content $log } else { Write-Host "no self-test.log written" }
+          if ($p.ExitCode -ne 0) { throw "bundled GUI self-test exited with $($p.ExitCode)" }
+          if (-not (Select-String -Path $log -Pattern 'self-test ok' -Quiet)) { throw "self-test log does not report success" }
+          if (-not (Select-String -Path $log -Pattern 'queued 1 file' -Quiet)) { throw "the windowed self-test did not queue the file argument" }
+          Write-Host "bundled GUI self-test passed, including a file argument"
+      - name: Convert real files with the frozen executable
+        shell: pwsh
+        # Building the window proves the bundle starts; only a conversion
+        # proves the packaged backends (Pillow plugins, PyMuPDF data,
+        # ffmpeg discovery) survived freezing.
+        run: |
+          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+          refreshenv
+          $work = Join-Path $env:RUNNER_TEMP "frozen-convert"
+          New-Item -ItemType Directory -Force -Path $work | Out-Null
+          python -c "from PIL import Image; Image.new('RGB', (64, 48), (120, 90, 200)).save(r'$work\sample.png')"
+          "Omniconv frozen conversion check." | Out-File -Encoding utf8 "$work\sample.txt"
+          $exe = "dist\Omniconv\omniconv.exe"
+          foreach ($case in @(@("sample.png", "webp"), @("sample.png", "jpeg"), @("sample.png", "pdf"), @("sample.txt", "pdf"))) {
+            $src, $tgt = $case
+            & $exe convert "$work\$src" --to $tgt --output $work
+            if ($LASTEXITCODE -ne 0) { throw "$src -> $tgt failed with $LASTEXITCODE" }
+          }
+          $made = Get-ChildItem $work | Where-Object { $_.Name -notin @("sample.png", "sample.txt") }
+          $made | Select-Object Name, Length
+          if ($made.Count -lt 4) { throw "expected four outputs, got $($made.Count)" }
+          # Size proves little (a flat-colour WebP is 80 bytes); have the
+          # frozen binary sniff each output back and name its real format.
+          foreach ($f in $made) {
+            $expected = switch ($f.Extension) { ".webp" { "webp" } ".jpg" { "jpeg" } ".pdf" { "pdf" } default { $null } }
+            if ($null -eq $expected) { throw "unexpected output $($f.Name)" }
+            # Out-String, because PowerShell hands back a bare string when a
+            # command prints one line and an array when it prints several.
+            $info = (& $exe info $f.FullName | Out-String)
+            if ($LASTEXITCODE -ne 0) { throw "info failed for $($f.Name)" }
+            if ($info -notmatch ": $expected \(") { throw "$($f.Name) was not identified as $expected. $info" }
+          }
+          Write-Host "frozen binary converted and re-identified $($made.Count) files"
+          # A two-hop route and a merge, neither of which the single-step
+          # cases above reach: routing writes an intermediate file, and a
+          # merge takes several inputs into one output.
+          $multi = Join-Path $work "multi"
+          New-Item -ItemType Directory -Force -Path $multi | Out-Null
+          & $exe convert "$work\sample.txt" --to webp --output $multi
+          if ($LASTEXITCODE -ne 0) { throw "the two-hop text to WebP route failed" }
+          if (-not (Test-Path "$multi\sample.webp")) { throw "the two-hop route produced no WebP" }
+          python -c "import sys; from PIL import Image; Image.new('RGB', (40, 30), 'coral').save(sys.argv[1])" "$multi\second.png"
+          & $exe merge "$work\sample.png" "$multi\second.png" -o "$multi\merged.pdf"
+          if ($LASTEXITCODE -ne 0) { throw "the merge failed" }
+          $pages = (& $exe info "$multi\merged.pdf" | Out-String)
+          if ($pages -notmatch "pages: 2") { throw "the merged PDF does not have two pages. $pages" }
+          Write-Host "frozen binary routed two hops and merged two images into one PDF"
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Omniconv-windows
+          path: dist/Omniconv/
+          if-no-files-found: error
+      - name: Build the installer (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { $iscc = "$env:ProgramFiles\Inno Setup 6\ISCC.exe" }
+          & $iscc packaging\windows\omniconv.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+          if (-not (Test-Path dist\Omniconv-Setup.exe)) { throw "installer missing" }
+          Get-Item dist\Omniconv-Setup.exe | Select-Object Name, Length
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Omniconv-windows-installer
+          path: dist/Omniconv-Setup.exe
+          if-no-files-found: error
+      - name: Install, verify and uninstall silently
+        shell: pwsh
+        run: |
+          $setup = Resolve-Path dist\Omniconv-Setup.exe
+          $p = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS="addtopath,sendto"' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "setup exited with $($p.ExitCode)" }
+          # The installer defaults to a per-user install; accept either layout.
+          $app = "$env:LOCALAPPDATA\Programs\Omniconv"
+          if (-not (Test-Path "$app\omniconvw.exe")) { $app = "$env:ProgramFiles\Omniconv" }
+          if (-not (Test-Path "$app\omniconvw.exe")) { throw "omniconvw.exe not installed under LocalAppData\Programs or Program Files" }
+          if (-not (Test-Path "$app\omniconv.exe")) { throw "omniconv.exe not installed" }
+          Write-Host "installed into $app"
+          & "$app\omniconv.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw "installed CLI failed" }
+          $probe = Join-Path $env:RUNNER_TEMP "installed-convert"
+          New-Item -ItemType Directory -Force -Path $probe | Out-Null
+          python -c "from PIL import Image; Image.new('RGB', (32, 32), 'red').save(r'$probe\probe.png')"
+          & "$app\omniconv.exe" convert "$probe\probe.png" --to webp --output $probe
+          if ($LASTEXITCODE -ne 0) { throw "the installed program could not convert" }
+          if (-not (Test-Path "$probe\probe.webp")) { throw "the installed program produced no output" }
+          Write-Host "the installed program converted a file"
+          $menu = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Omniconv\Omniconv.lnk"
+          if (-not (Test-Path $menu)) { $menu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Omniconv\Omniconv.lnk" }
+          if (-not (Test-Path $menu)) { throw "Start Menu shortcut missing" }
+          $sendto = "$env:APPDATA\Microsoft\Windows\SendTo\Omniconv.lnk"
+          if (-not (Test-Path $sendto)) { throw "Send to shortcut missing: $sendto" }
+          $openwith = Get-ItemProperty "HKCU:\Software\Classes\Applications\omniconvw.exe\SupportedTypes" -ErrorAction Stop
+          if (-not ($openwith.PSObject.Properties.Name -contains ".png")) { throw "Open with registration missing .png" }
+          $userPath = (Get-ItemProperty HKCU:\Environment).Path
+          if ($userPath -notlike "*Omniconv*") { throw "PATH entry missing; user PATH is: $userPath" }
+          Write-Host "install verified: program, shortcuts, Open with, PATH"
+          $unins = Get-ChildItem "$app\unins*.exe" | Select-Object -First 1
+          $u = Start-Process -FilePath $unins.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          if ($u.ExitCode -ne 0) { throw "uninstall exited with $($u.ExitCode)" }
+          Start-Sleep -Seconds 3
+          if (Test-Path "$app\omniconvw.exe") { throw "omniconvw.exe still present after uninstall" }
+          if (Test-Path "HKCU:\Software\Classes\Applications\omniconvw.exe") { throw "Open with registration not removed" }
+          Write-Host "uninstall verified"
+      - name: Print screenshots into the log
+        if: always()
+        shell: pwsh
+        # The build artifacts are not reachable from every environment that
+        # reviews these runs; the log is. Kept last so it lands at the end.
+        run: |
+          $shot = "screenshots\light\02-files-added.png"
+          # Only the sidebar, which is where clipping shows: the whole
+          # window runs to a few hundred lines of base64.
+          # The numbers first, then the picture: both belong at the end,
+          # where reading the tail of the log reaches them.
+          $env:QT_QPA_PLATFORM = "windows"
+          python scripts\report-layout.py
+          if (Test-Path $shot) { python scripts\print-screenshot.py $shot --right 0.42 --top 0.30 --width 420 } else { Write-Host "missing $shot" }

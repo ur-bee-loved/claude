@@ -153,7 +153,14 @@ def _story_pdf(job: Job, source_html: str, page: str, title: str) -> Path:
     css = f"body{{font-family:sans-serif;font-size:{int(job.opt('font_size', 11))}pt}}"
     archive = fitz.Archive(str(job.source.parent))
     story = fitz.Story(html=source_html, user_css=css, archive=archive)
-    writer = fitz.DocumentWriter(str(job.target))
+    # Lay out into memory, then save the final document once with metadata.
+    # MuPDF's writer keeps its file open until the object is destroyed, which
+    # on Windows blocks any later replace or delete of that file; writing to
+    # a buffer avoids the file altogether.
+    import io
+
+    buffer = io.BytesIO()
+    writer = fitz.DocumentWriter(buffer)
     more = True
     while more:
         dev = writer.begin_page(rect)
@@ -161,12 +168,11 @@ def _story_pdf(job: Job, source_html: str, page: str, title: str) -> Path:
         story.draw(dev)
         writer.end_page()
     writer.close()
-    doc = fitz.open(str(job.target))
+    del writer
+    doc = fitz.open("pdf", buffer.getvalue())
     doc.set_metadata({"title": title, "author": str(job.opt("author") or "")})
-    tmp = job.scratch(".pdf")
-    doc.save(str(tmp), garbage=2, deflate=True)
+    doc.save(str(job.target), garbage=2, deflate=True)
     doc.close()
-    tmp.replace(job.target)
     return job.target
 
 
