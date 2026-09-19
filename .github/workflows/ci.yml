@@ -96,6 +96,15 @@ jobs:
         timeout-minutes: 12
         run: |
           choco install ffmpeg imagemagick ghostscript poppler pandoc qpdf 7zip graphviz -y --no-progress
+      - name: Install the heavier optional backends
+        shell: pwsh
+        # LibreOffice and calibre are the two backends with Windows-specific
+        # code in them (soffice.com with a profile URI, and calibre's
+        # Unix-only ownership check), so they need to run here at least once.
+        # Not fatal: these are large downloads.
+        continue-on-error: true
+        timeout-minutes: 15
+        run: choco install libreoffice-fresh calibre tesseract -y --no-progress
       - name: Install Python backends
         run: python -m pip install -e ".[all,qt]" pytest pyinstaller
       - name: Backend report
@@ -113,6 +122,26 @@ jobs:
           Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
           refreshenv
           python -m pytest -q
+      - name: Convert through LibreOffice and calibre if they installed
+        shell: pwsh
+        # These two carry the only Windows-specific backend code. Skipped
+        # rather than failed when the optional install did not complete.
+        run: |
+          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+          refreshenv
+          $dir = Join-Path $env:RUNNER_TEMP "office"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          "Omniconv office backend check." | Out-File -Encoding utf8 "$dir\note.txt"
+          $report = python -m omniconv doctor | Out-String
+          foreach ($case in @(@("libreoffice", "docx"), @("calibre", "epub"))) {
+            $backend, $target = $case
+            if ($report -notmatch "(?m)^$backend\s+available") { Write-Host "$backend not installed, skipping"; continue }
+            python -m omniconv convert "$dir\note.txt" --to $target --backend $backend --output $dir
+            if ($LASTEXITCODE -ne 0) { throw "$backend could not convert to $target" }
+            $out = Get-ChildItem $dir -Filter "*.$target"
+            if (-not $out) { throw "$backend produced no .$target" }
+            Write-Host "$backend produced $($out.Name), $($out.Length) bytes"
+          }
       - name: Convert a file whose name the code page cannot encode
         shell: pwsh
         # Redirected output on Windows uses the ANSI code page, so printing
