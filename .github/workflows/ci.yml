@@ -168,6 +168,39 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "bundled GUI self-test exited with $($p.ExitCode)" }
           if (-not (Select-String -Path $log -Pattern 'self-test ok' -Quiet)) { throw "self-test log does not report success" }
           Write-Host "bundled GUI self-test passed"
+      - name: Convert real files with the frozen executable
+        shell: pwsh
+        # Building the window proves the bundle starts; only a conversion
+        # proves the packaged backends (Pillow plugins, PyMuPDF data,
+        # ffmpeg discovery) survived freezing.
+        run: |
+          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+          refreshenv
+          $work = Join-Path $env:RUNNER_TEMP "frozen-convert"
+          New-Item -ItemType Directory -Force -Path $work | Out-Null
+          python -c "from PIL import Image; Image.new('RGB', (64, 48), (120, 90, 200)).save(r'$work\sample.png')"
+          "Omniconv frozen conversion check." | Out-File -Encoding utf8 "$work\sample.txt"
+          $exe = "dist\Omniconv\omniconv.exe"
+          foreach ($case in @(@("sample.png", "webp"), @("sample.png", "jpeg"), @("sample.png", "pdf"), @("sample.txt", "pdf"))) {
+            $src, $tgt = $case
+            & $exe convert "$work\$src" --to $tgt --output $work
+            if ($LASTEXITCODE -ne 0) { throw "$src -> $tgt failed with $LASTEXITCODE" }
+          }
+          $made = Get-ChildItem $work | Where-Object { $_.Name -notin @("sample.png", "sample.txt") }
+          $made | Select-Object Name, Length
+          if ($made.Count -lt 4) { throw "expected four outputs, got $($made.Count)" }
+          # Size proves little (a flat-colour WebP is 80 bytes); have the
+          # frozen binary sniff each output back and name its real format.
+          foreach ($f in $made) {
+            $expected = switch ($f.Extension) { ".webp" { "webp" } ".jpg" { "jpeg" } ".pdf" { "pdf" } default { $null } }
+            if ($null -eq $expected) { throw "unexpected output $($f.Name)" }
+            # Out-String, because PowerShell hands back a bare string when a
+            # command prints one line and an array when it prints several.
+            $info = (& $exe info $f.FullName | Out-String)
+            if ($LASTEXITCODE -ne 0) { throw "info failed for $($f.Name)" }
+            if ($info -notmatch ": $expected \(") { throw "$($f.Name) was not identified as $expected. $info" }
+          }
+          Write-Host "frozen binary converted and re-identified $($made.Count) files"
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
         with:
@@ -204,6 +237,13 @@ jobs:
           Write-Host "installed into $app"
           & "$app\omniconv.exe" --version
           if ($LASTEXITCODE -ne 0) { throw "installed CLI failed" }
+          $probe = Join-Path $env:RUNNER_TEMP "installed-convert"
+          New-Item -ItemType Directory -Force -Path $probe | Out-Null
+          python -c "from PIL import Image; Image.new('RGB', (32, 32), 'red').save(r'$probe\probe.png')"
+          & "$app\omniconv.exe" convert "$probe\probe.png" --to webp --output $probe
+          if ($LASTEXITCODE -ne 0) { throw "the installed program could not convert" }
+          if (-not (Test-Path "$probe\probe.webp")) { throw "the installed program produced no output" }
+          Write-Host "the installed program converted a file"
           $menu = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Omniconv\Omniconv.lnk"
           if (-not (Test-Path $menu)) { $menu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Omniconv\Omniconv.lnk" }
           if (-not (Test-Path $menu)) { throw "Start Menu shortcut missing" }
