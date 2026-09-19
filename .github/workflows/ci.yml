@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+# A run for an older commit on the same branch tells nobody anything once a
+# newer one exists, and the Windows job holds a runner for a quarter of an
+# hour.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   linux:
     name: Linux (Ubuntu)
