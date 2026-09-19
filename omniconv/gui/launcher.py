@@ -86,6 +86,71 @@ def _report(message: str) -> None:
             pass
 
 
+def self_test_path():
+    return platform.user_data_dir() / "self-test.log"
+
+
+def self_test() -> int:
+    """Build the window without entering the event loop, and report what
+    happened to a log file.
+
+    A windowed executable has no console and, under Qt's offscreen
+    platform, its event loop may return as soon as it starts, so "is the
+    process still alive" says nothing about whether the build works. This
+    does: it imports the toolkit, constructs the main window, loads the
+    backends and prints what it found.
+    """
+    lines: list[str] = []
+    status = 0
+    try:
+        import omniconv
+        from omniconv.core.registry import REGISTRY
+
+        tk = choose_toolkit()
+        lines.append(f"omniconv {omniconv.__version__} on {sys.platform}, frozen={getattr(sys, 'frozen', False)}")
+        lines.append(f"toolkit: {tk or 'none'} (available: {', '.join(available_toolkits()) or 'none'})")
+        if tk is None:
+            raise RuntimeError("no GUI toolkit available: " + "; ".join(f"{k}: {v}" for k, v in IMPORT_ERRORS.items()))
+        if tk == "qt":
+            from omniconv.gui.qt_app import MainWindow, create_app
+
+            app = create_app([sys.argv[0]])
+            window = MainWindow()
+            window.show()
+            app.processEvents()
+            lines.append(f"window: {window.windowTitle()!r}, {len(REGISTRY.available())}/{len(REGISTRY.all())} backends")
+            window.close()
+        else:
+            import gi
+
+            gi.require_version("Gtk", "4.0")
+            from gi.repository import Gtk  # noqa: F401
+
+            from omniconv.gui.window import MainWindow  # noqa: F401
+
+            from omniconv.converters import load_all
+
+            load_all()
+            lines.append(f"window class imported, {len(REGISTRY.available())}/{len(REGISTRY.all())} backends")
+        lines.append("self-test ok")
+    except Exception:
+        import traceback
+
+        lines.append("self-test FAILED")
+        lines.append(traceback.format_exc())
+        status = 1
+    report = "\n".join(lines)
+    try:
+        path = self_test_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(report + "\n", encoding="utf-8")
+    except Exception:
+        pass
+    if sys.stdout is not None:
+        print(report)
+    return status
+
+
 def run(files: list[str] | None = None) -> int:
     tk = choose_toolkit()
     if tk == "gtk":
@@ -102,8 +167,11 @@ def run(files: list[str] | None = None) -> int:
 def main() -> int:
     """Entry point for the ``omniconv-gui`` launcher (a windowed executable
     on Windows, so there is no console to print to on failure)."""
+    args = sys.argv[1:]
+    if "--self-test" in args:
+        return self_test()
     try:
-        return run(sys.argv[1:])
+        return run(args)
     except Exception:
         import traceback
 
