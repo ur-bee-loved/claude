@@ -94,6 +94,9 @@ jobs:
         # at once under the offscreen platform, so process lifetime proves
         # nothing. --self-test builds the window and reports to a log file.
         run: |
+          # The console binary first: its traceback is visible in the log.
+          dist\Omniconv\omniconv.exe gui --self-test
+          if ($LASTEXITCODE -ne 0) { throw "console GUI self-test exited with $LASTEXITCODE" }
           $log = "$env:LOCALAPPDATA\omniconv\self-test.log"
           Remove-Item $log -ErrorAction SilentlyContinue
           $p = Start-Process -FilePath dist\Omniconv\Omniconv.exe -ArgumentList '--self-test' -PassThru

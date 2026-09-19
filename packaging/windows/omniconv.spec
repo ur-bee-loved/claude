@@ -39,7 +39,9 @@ for optional in ("pymupdf", "pillow_heif", "reportlab"):
 excludes = ["gi", "tkinter", "PyQt5", "PyQt6", "IPython", "matplotlib", "numpy", "scipy", "pandas", "sympy", "test", "unittest"]
 
 a_gui = Analysis([str(ROOT / "packaging" / "windows" / "entry_gui.py")], pathex=[str(ROOT)], datas=datas, hiddenimports=hidden, excludes=excludes, noarchive=False)
-a_cli = Analysis([str(ROOT / "packaging" / "windows" / "entry_cli.py")], pathex=[str(ROOT)], datas=datas, hiddenimports=hidden, excludes=excludes + ["PySide6"], noarchive=False)
+# The console binary keeps Qt too: "omniconv gui" must work from a terminal,
+# and both executables share one _internal folder, so the files are not duplicated.
+a_cli = Analysis([str(ROOT / "packaging" / "windows" / "entry_cli.py")], pathex=[str(ROOT)], datas=datas, hiddenimports=hidden, excludes=excludes, noarchive=False)
 
 pyz_gui = PYZ(a_gui.pure)
 pyz_cli = PYZ(a_cli.pure)

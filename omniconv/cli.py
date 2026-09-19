@@ -269,6 +269,8 @@ def cmd_gui(args: argparse.Namespace) -> int:
         import os
 
         os.environ["OMNICONV_TOOLKIT"] = args.toolkit
+    if getattr(args, "self_test", False):
+        return launcher.self_test()
     return launcher.run(args.inputs)
 
 
@@ -323,6 +325,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("gui", help="open the graphical interface")
     p.add_argument("inputs", nargs="*")
     p.add_argument("--toolkit", choices=("gtk", "qt"), help="force a toolkit (default: GTK on Linux, Qt on Windows and macOS)")
+    p.add_argument("--self-test", action="store_true", help="build the window, report what happened and exit (for diagnosing an installation)")
     p.set_defaults(func=cmd_gui)
     return parser
 
