@@ -23,6 +23,13 @@ def main() -> int:
     parser.add_argument("--chunk", type=int, default=200)
     parser.add_argument("--colors", type=int, default=128)
     parser.add_argument(
+        "--top",
+        type=float,
+        default=None,
+        help="keep only this fraction of the height, from the top: with real "
+        "glyphs the whole sidebar runs past what a log tail returns in one piece",
+    )
+    parser.add_argument(
         "--right",
         type=float,
         default=None,
@@ -38,6 +45,8 @@ def main() -> int:
     original = image.size
     if args.right:
         image = image.crop((int(image.width * (1 - args.right)), 0, image.width, image.height))
+    if args.top:
+        image = image.crop((0, 0, image.width, int(image.height * args.top)))
     image.thumbnail((args.width, args.width * 4), Image.LANCZOS)
     buffer = io.BytesIO()
     image.convert("P", palette=Image.ADAPTIVE, colors=args.colors).save(buffer, "PNG", optimize=True)
