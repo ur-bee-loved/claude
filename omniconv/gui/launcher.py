@@ -195,7 +195,8 @@ def main() -> int:
     on Windows, so there is no console to print to on failure)."""
     args = sys.argv[1:]
     if "--self-test" in args:
-        return self_test([a for a in args if a != "--self-test"])
+        # Anything that is not an option is taken as a file to queue.
+        return self_test([a for a in args if not a.startswith("-")])
     try:
         return run(args)
     except Exception:

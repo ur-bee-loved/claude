@@ -286,7 +286,7 @@ class MainWindow(QtWidgets.QMainWindow):
         splitter = self.splitter = QtWidgets.QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(splitter)
 
-        # Left: file list with an empty-state hint layered over it.
+        # Left: the file table and the empty page, as two stack pages.
         left = QtWidgets.QWidget()
         left_layout = QtWidgets.QVBoxLayout(left)
         left_layout.setContentsMargins(8, 8, 4, 8)

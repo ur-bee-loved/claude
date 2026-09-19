@@ -97,7 +97,7 @@ def main() -> int:
     args = parser.parse_args()
     args.outdir.mkdir(parents=True, exist_ok=True)
 
-    from PySide6 import QtCore, QtGui, QtWidgets
+    from PySide6 import QtCore, QtGui
 
     from omniconv.gui.qt_app import BackendsDialog, MainWindow, create_app
 
