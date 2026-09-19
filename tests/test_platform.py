@@ -172,3 +172,16 @@ def test_processes_are_spawned_in_one_place_only(monkeypatch):
         if path.name not in ("procs.py", "platform.py") and pattern.search(path.read_text(encoding="utf-8"))
     )
     assert offenders == [], offenders
+
+
+def test_the_windowed_entry_point_configures_the_console(monkeypatch):
+    """A windowed executable has no streams until its output is redirected,
+    and then they use the ANSI code page like any other."""
+    from omniconv.gui import launcher
+
+    calls = []
+    monkeypatch.setattr(platform, "configure_console", lambda: calls.append(True))
+    monkeypatch.setattr(sys, "argv", ["omniconvw", "--self-test"])
+    monkeypatch.setattr(launcher, "self_test", lambda files=None: 0)
+    assert launcher.main() == 0
+    assert calls == [True]

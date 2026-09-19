@@ -193,6 +193,9 @@ def run(files: list[str] | None = None) -> int:
 def main() -> int:
     """Entry point for the ``omniconv-gui`` launcher (a windowed executable
     on Windows, so there is no console to print to on failure)."""
+    # The windowed executable normally has no streams, but it does when its
+    # output is redirected, and then they use the ANSI code page.
+    platform.configure_console()
     args = sys.argv[1:]
     if "--self-test" in args:
         # Anything that is not an option is taken as a file to queue.
