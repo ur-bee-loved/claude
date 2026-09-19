@@ -257,7 +257,7 @@ class MainWindow(QtWidgets.QMainWindow):
         tb.addAction(self.act_clear)
 
     def _build_body(self) -> None:
-        splitter = QtWidgets.QSplitter(Qt.Orientation.Horizontal)
+        splitter = self.splitter = QtWidgets.QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(splitter)
 
         # Left: file list with an empty-state hint layered over it.
@@ -347,7 +347,7 @@ class MainWindow(QtWidgets.QMainWindow):
         side_layout.addWidget(self.options_box)
         side_layout.addStretch(1)
 
-        scroll = QtWidgets.QScrollArea()
+        scroll = self.scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         scroll.setWidget(side)
@@ -356,6 +356,22 @@ class MainWindow(QtWidgets.QMainWindow):
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
         splitter.setSizes([620, 380])
+        self.left_pane = left
+        self._sync_minimum_width()
+
+    def _sync_minimum_width(self) -> None:
+        """How wide the sidebar must be depends on the system font and the
+        style, so the window's minimum is derived from it instead of fixed.
+        Segoe UI needs about a third more room than the Linux default, and a
+        fixed minimum clipped the target picker and the output buttons
+        there."""
+        side = self.scroll.widget().minimumSizeHint().width()
+        side += self.scroll.verticalScrollBar().sizeHint().width() + 2 * self.scroll.frameWidth()
+        self.scroll.setMinimumWidth(side)
+        files = max(320, self.left_pane.minimumSizeHint().width())
+        # 700 is the designed minimum; only widen past it when the sidebar
+        # genuinely needs more than that leaves over.
+        self.setMinimumWidth(max(700, files + side + self.splitter.handleWidth()))
 
     def _make_backend_banner(self) -> QtWidgets.QFrame:
         """Shown when fewer than half of the backends are usable, which is
@@ -544,6 +560,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.options_form.addRow(label, widget)
             self.option_widgets[spec.name] = (spec, widget)
         self.options_box.setVisible(bool(self.option_widgets))
+        if hasattr(self, "scroll"):
+            self._sync_minimum_width()
 
     def _make_option_widget(self, spec: OptionSpec) -> QtWidgets.QWidget:
         if spec.type is bool:

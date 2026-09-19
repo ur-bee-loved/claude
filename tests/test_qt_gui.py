@@ -131,10 +131,13 @@ def test_sidebar_fits_the_window_at_its_minimum_size(window, samples):
     output buttons, which is only visible in a rendered window."""
     if not backend("pillow"):
         pytest.skip("Pillow missing")
-    window.resize(window.minimumSize())
     window.add_paths([str(samples / "sample.png"), str(samples / "sample.txt")])
     QtWidgets.QApplication.processEvents()
-    scroll = window.centralWidget().widget(1)
+    # The options panel changes what the sidebar needs, so take the minimum
+    # after they exist.
+    window.resize(window.minimumSize())
+    QtWidgets.QApplication.processEvents()
+    scroll = window.scroll
     assert scroll.widget().minimumSizeHint().width() <= scroll.viewport().width()
     assert not scroll.horizontalScrollBar().isVisible()
     assert not window.file_list.horizontalScrollBar().isVisible()
@@ -149,3 +152,26 @@ def test_window_renders_to_a_pixmap(window, samples, tmp_path):
     assert pixmap.width() == window.width() and pixmap.height() == window.height()
     out = tmp_path / "window.png"
     assert pixmap.save(str(out), "PNG") and out.stat().st_size > 1000
+
+
+@pytest.mark.parametrize("point_size", [9, 14, 20])
+def test_sidebar_fits_at_any_font_size(app, samples, point_size):
+    """Segoe UI needs about a third more room than the Linux default, which
+    is how a fixed window minimum came to clip the sidebar on Windows. The
+    minimum is derived from the sidebar, so any font has to fit."""
+    if not backend("pillow"):
+        pytest.skip("Pillow missing")
+    original = app.font()
+    try:
+        app.setFont(QtGui.QFont(original.family(), point_size))
+        w = MainWindow()
+        w.show()
+        w.add_paths([str(samples / "sample.png"), str(samples / "sample.txt")])
+        QtWidgets.QApplication.processEvents()
+        w.resize(w.minimumSize())
+        QtWidgets.QApplication.processEvents()
+        assert w.scroll.widget().minimumSizeHint().width() <= w.scroll.viewport().width()
+        assert not w.scroll.horizontalScrollBar().isVisible()
+        w.close()
+    finally:
+        app.setFont(original)
