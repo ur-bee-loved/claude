@@ -171,21 +171,41 @@ jobs:
           Write-Host "converted $($out.Name)"
       - name: Render the window
         shell: pwsh
-        env:
-          QT_QPA_PLATFORM: offscreen
-        # Offscreen Qt still rasterises, so this is the only way the Windows
-        # window is ever looked at: the images go up as an artifact.
+        # The native plugin, not offscreen: Qt's offscreen platform on
+        # Windows has no font database, so every glyph came out as a
+        # missing-glyph box and the layout was measured with the wrong
+        # metrics. The runner has a window station, so the real plugin
+        # works headlessly; offscreen stays as a fallback.
         run: |
           Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
           refreshenv
+          $env:QT_QPA_PLATFORM = "windows"
           python scripts\gui-screenshot.py screenshots\light
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::warning::the native Qt platform did not work; falling back to offscreen, whose fonts are not the real ones"
+            $env:QT_QPA_PLATFORM = "offscreen"
+            python scripts\gui-screenshot.py screenshots\light
+            if ($LASTEXITCODE -ne 0) { throw "the window could not be rendered on either platform" }
+          }
           python scripts\gui-screenshot.py screenshots\dark --dark
+          if ($LASTEXITCODE -ne 0) { throw "the dark render failed" }
       - name: Upload screenshots
         uses: actions/upload-artifact@v4
         with:
           name: screenshots-windows
           path: screenshots/
           if-no-files-found: error
+      - name: Measure the layout with the real Windows fonts
+        shell: pwsh
+        # The layout assertions run under offscreen with the rest of the
+        # suite, where the fonts are not Windows'. Run them once more on the
+        # native plugin so the widths they check are Segoe UI's.
+        run: |
+          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+          refreshenv
+          $env:QT_QPA_PLATFORM = "windows"
+          python -m pytest tests/test_qt_gui.py -q
+          if ($LASTEXITCODE -ne 0) { throw "the layout does not hold under the real Windows fonts" }
       - name: Dry-run the dependency installer
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File scripts\install-deps.ps1 -DryRun

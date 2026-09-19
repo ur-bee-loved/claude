@@ -56,6 +56,26 @@ def sample_files(directory: Path) -> list[Path]:
     return made
 
 
+def report_fonts(QtGui) -> None:
+    """Name the font actually in use, and fail if it has no glyphs.
+
+    Qt's offscreen platform on Windows has no font database, so every
+    character renders as a missing-glyph box and the layout is measured
+    with the wrong metrics. That is invisible in an assertion and obvious
+    in an image, so say it in the log either way.
+    """
+    font = QtGui.QGuiApplication.font()
+    resolved = QtGui.QFontInfo(font).family()
+    families = QtGui.QFontDatabase.families()
+    metrics = QtGui.QFontMetrics(font)
+    print(f"font: requested {font.family()!r}, resolved {resolved!r}, {len(families)} families in the database")
+    if not families:
+        raise SystemExit(
+            "no fonts available: every glyph would render as a box and the "
+            "layout would be measured with the wrong metrics"
+        )
+
+
 def dark_palette(QtGui):
     """Approximates the palette Windows hands a dark-mode application, so
     hard-coded colours and unreadable contrast show up in the images."""
@@ -102,6 +122,7 @@ def main() -> int:
     from omniconv.gui.qt_app import BackendsDialog, MainWindow, create_app
 
     app = create_app([sys.argv[0]])
+    report_fonts(QtGui)
     if args.dark:
         app.setStyle("Fusion")
         app.setPalette(dark_palette(QtGui))
