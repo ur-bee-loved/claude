@@ -206,9 +206,6 @@ jobs:
           $env:QT_QPA_PLATFORM = "windows"
           python -m pytest tests/test_qt_gui.py -q
           if ($LASTEXITCODE -ne 0) { throw "the layout does not hold under the real Windows fonts" }
-          # The assertions say pass or fail; these are the numbers behind them.
-          python scripts\report-layout.py
-          if ($LASTEXITCODE -ne 0) { throw "the layout report failed" }
       - name: Dry-run the dependency installer
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File scripts\install-deps.ps1 -DryRun
@@ -382,4 +379,8 @@ jobs:
           $shot = "screenshots\light\02-files-added.png"
           # Only the sidebar, which is where clipping shows: the whole
           # window runs to a few hundred lines of base64.
+          # The numbers first, then the picture: both belong at the end,
+          # where reading the tail of the log reaches them.
+          $env:QT_QPA_PLATFORM = "windows"
+          python scripts\report-layout.py
           if (Test-Path $shot) { python scripts\print-screenshot.py $shot --right 0.42 --top 0.30 --width 420 } else { Write-Host "missing $shot" }

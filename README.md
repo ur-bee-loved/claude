@@ -204,9 +204,18 @@ Four further checks run there because they can only fail on Windows:
 
 The Windows-only bugs this surfaced are fixed: a replace of a file MuPDF
 still held open, `PATHEXT` casing in a test and in path comparisons, a
-sidebar that clipped at the window's minimum size because Segoe UI needs
-about a third more room than the Linux default, and the code page failure
+sidebar that clipped at the window's minimum size because the Windows
+font metrics are wider than the Linux ones, and the code page failure
 above.
+
+One caveat on that last one. It was found on the runner under Qt's
+offscreen platform, which on Windows has no font database: the window was
+drawn, and measured, with a font that has no glyphs, so the width it
+produced was not Segoe UI's. The fix does not depend on the number, since
+the minimum is derived from the sidebar's own hint at runtime, and the
+layout now runs a second time on the native plugin, where the metrics are
+the real ones. The screenshot script fails outright on an empty font
+database so this cannot go unnoticed again.
 
 Every winget, scoop and Chocolatey identifier in `install-deps.ps1` is
 checked against the live catalogues by `install-deps.ps1 -CheckIds`,
