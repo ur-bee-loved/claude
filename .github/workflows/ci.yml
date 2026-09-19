@@ -38,6 +38,35 @@ jobs:
           path: screenshots/
           if-no-files-found: error
 
+  linux-gtk:
+    name: Linux (GTK 4 front end)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GTK 4, libadwaita and a few backends
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1 xvfb ffmpeg imagemagick ghostscript poppler-utils
+      - name: Environment that can see the system typelibs
+        # PyGObject's typelibs come from apt, not pip, so the venv has to
+        # inherit the system packages.
+        run: |
+          python3 -m venv --system-site-packages .venv-gtk
+          .venv-gtk/bin/pip install --upgrade pip
+          .venv-gtk/bin/pip install -e ".[all]" pytest
+      - name: Prove PyGObject works, so the tests cannot skip unnoticed
+        run: |
+          .venv-gtk/bin/python -c "import gi; gi.require_version('Gtk','4.0'); gi.require_version('Adw','1'); from gi.repository import Adw, Gtk; print('PyGObject', gi.__version__, 'ok')"
+      - name: GTK tests under a virtual display
+        run: xvfb-run -a .venv-gtk/bin/python -m pytest tests/test_gtk_gui.py -q -rs
+      - name: GUI self-test builds the GTK window
+        env:
+          OMNICONV_TOOLKIT: gtk
+        run: |
+          xvfb-run -a .venv-gtk/bin/python -m omniconv gui --self-test | tee self-test.txt
+          grep -q "^window: 'Omniconv'" self-test.txt || { echo "the self-test did not build a window"; exit 1; }
+
   windows:
     name: Windows
     runs-on: windows-latest

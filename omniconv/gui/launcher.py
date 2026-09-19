@@ -124,14 +124,26 @@ def self_test() -> int:
             import gi
 
             gi.require_version("Gtk", "4.0")
-            from gi.repository import Gtk  # noqa: F401
-
-            from omniconv.gui.window import MainWindow  # noqa: F401
+            gi.require_version("Adw", "1")
+            from gi.repository import Adw, Gtk
 
             from omniconv.converters import load_all
 
+            from omniconv.gui.window import MainWindow
+
             load_all()
-            lines.append(f"window class imported, {len(REGISTRY.available())}/{len(REGISTRY.all())} backends")
+            backends = f"{len(REGISTRY.available())}/{len(REGISTRY.all())} backends"
+            if Gtk.init_check():
+                # GTK needs a display to build widgets at all, so a machine
+                # without one gets the weaker import-only check.
+                Adw.init()
+                app = Adw.Application(application_id="io.github.omniconv.Omniconv.SelfTest")
+                app.register(None)
+                window = MainWindow(application=app)
+                lines.append(f"window: {window.get_title()!r}, {backends}")
+                window.destroy()
+            else:
+                lines.append(f"no display: window class imported only, {backends}")
         lines.append("self-test ok")
     except Exception:
         import traceback
