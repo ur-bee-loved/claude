@@ -76,6 +76,10 @@ jobs:
           name: screenshots-gtk
           path: screenshots/
           if-no-files-found: error
+      - name: Print a screenshot into the log
+        if: always()
+        run: |
+          test -f screenshots/02-files-added.png && .venv-gtk/bin/python scripts/print-screenshot.py screenshots/02-files-added.png || echo "no screenshot to print"
 
   windows:
     name: Windows
@@ -269,3 +273,12 @@ jobs:
           if (Test-Path "$app\omniconvw.exe") { throw "omniconvw.exe still present after uninstall" }
           if (Test-Path "HKCU:\Software\Classes\Applications\omniconvw.exe") { throw "Open with registration not removed" }
           Write-Host "uninstall verified"
+      - name: Print screenshots into the log
+        if: always()
+        shell: pwsh
+        # The build artifacts are not reachable from every environment that
+        # reviews these runs; the log is. Kept last so it lands at the end.
+        run: |
+          foreach ($shot in @("screenshots\light\02-files-added.png", "screenshots\light\04-minimum-size.png")) {
+            if (Test-Path $shot) { python scripts\print-screenshot.py $shot } else { Write-Host "missing $shot" }
+          }
