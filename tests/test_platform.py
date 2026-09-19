@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -104,3 +105,29 @@ def test_native_lookup_agrees_with_which():
     assert platform.find_executable(name) == shutil.which(name)
     kwargs = platform.hidden_console_kwargs()
     assert (kwargs == {}) != platform.IS_WINDOWS
+
+
+def test_console_is_reconfigured_for_names_windows_cannot_encode(monkeypatch):
+    """A redirected stream on Windows uses the ANSI code page, so a path
+    outside it raises UnicodeEncodeError before any conversion runs."""
+    import io
+
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="cp1252", errors="strict", newline="")
+    monkeypatch.setattr(platform, "IS_WINDOWS", True)
+    monkeypatch.setattr(sys, "stdout", stream)
+    monkeypatch.setattr(sys, "stderr", stream)
+    with pytest.raises(UnicodeEncodeError):
+        stream.write("日本語.png")
+    platform.configure_console()
+    assert stream.encoding == "utf-8"
+    stream.write("日本語.png")
+    stream.flush()
+    assert "日本語.png" in raw.getvalue().decode("utf-8")
+
+
+def test_console_is_left_alone_off_windows(monkeypatch):
+    monkeypatch.setattr(platform, "IS_WINDOWS", False)
+    before = sys.stdout.encoding
+    platform.configure_console()
+    assert sys.stdout.encoding == before

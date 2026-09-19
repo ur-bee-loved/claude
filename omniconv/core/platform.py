@@ -304,3 +304,24 @@ def user_data_dir(app: str = "omniconv") -> Path:
     if IS_MAC:
         return Path.home() / "Library" / "Application Support" / app
     return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / app
+
+
+def configure_console() -> None:
+    """Stop Windows from failing on a file name it cannot encode.
+
+    A redirected stream on Windows uses the ANSI code page, so printing a
+    path containing characters outside it raises UnicodeEncodeError and
+    the conversion never happens. Writing UTF-8 instead, and replacing
+    anything that still cannot be encoded, keeps the program running.
+    A windowed executable has no streams at all, hence the guards.
+    """
+    if not IS_WINDOWS:
+        return
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass

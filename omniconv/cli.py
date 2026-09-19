@@ -331,6 +331,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from omniconv.core import platform
+
+    platform.configure_console()
     argv = list(sys.argv[1:] if argv is None else argv)
     # Shortcut: "omniconv in.png out.webp" or "omniconv in.png -t webp".
     if argv and argv[0] not in ("convert", "merge", "formats", "route", "doctor", "info", "gui", "-h", "--help", "--version") and Path(argv[0]).exists():

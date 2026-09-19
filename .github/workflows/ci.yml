@@ -113,6 +113,24 @@ jobs:
           Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
           refreshenv
           python -m pytest -q
+      - name: Convert a file whose name the code page cannot encode
+        shell: pwsh
+        # Redirected output on Windows uses the ANSI code page, so printing
+        # such a path used to raise UnicodeEncodeError before the conversion
+        # ran. Redirecting every stream to a file reproduces that.
+        run: |
+          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+          refreshenv
+          $dir = Join-Path $env:RUNNER_TEMP "unicode-names"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $name = [char]0x65E5 + [char]0x672C + [char]0x8A9E + "-caf" + [char]0xE9 + ".png"
+          python -c "import sys; from PIL import Image; Image.new('RGB', (32, 32), 'teal').save(sys.argv[1])" "$dir\$name"
+          python -m omniconv convert "$dir\$name" --to webp --output $dir *> "$dir\log.txt"
+          if ($LASTEXITCODE -ne 0) { Get-Content "$dir\log.txt"; throw "conversion of a non-ASCII name failed with $LASTEXITCODE" }
+          Get-Content "$dir\log.txt"
+          $out = Get-ChildItem $dir -Filter *.webp
+          if (-not $out) { throw "no WebP was produced" }
+          Write-Host "converted $($out.Name)"
       - name: Render the window
         shell: pwsh
         env:
