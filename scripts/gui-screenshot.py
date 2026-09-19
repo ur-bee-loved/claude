@@ -56,6 +56,32 @@ def sample_files(directory: Path) -> list[Path]:
     return made
 
 
+def dark_palette(QtGui):
+    """Approximates the palette Windows hands a dark-mode application, so
+    hard-coded colours and unreadable contrast show up in the images."""
+    from PySide6.QtCore import Qt
+
+    p = QtGui.QPalette()
+    window, base, text = QtGui.QColor(32, 32, 32), QtGui.QColor(25, 25, 25), QtGui.QColor(230, 230, 230)
+    for role, colour in (
+        (QtGui.QPalette.ColorRole.Window, window),
+        (QtGui.QPalette.ColorRole.Base, base),
+        (QtGui.QPalette.ColorRole.AlternateBase, QtGui.QColor(45, 45, 45)),
+        (QtGui.QPalette.ColorRole.Button, window),
+        (QtGui.QPalette.ColorRole.WindowText, text),
+        (QtGui.QPalette.ColorRole.Text, text),
+        (QtGui.QPalette.ColorRole.ButtonText, text),
+        (QtGui.QPalette.ColorRole.ToolTipBase, window),
+        (QtGui.QPalette.ColorRole.ToolTipText, text),
+        (QtGui.QPalette.ColorRole.PlaceholderText, QtGui.QColor(140, 140, 140)),
+        (QtGui.QPalette.ColorRole.Mid, QtGui.QColor(140, 140, 140)),
+        (QtGui.QPalette.ColorRole.Highlight, QtGui.QColor(0, 120, 212)),
+        (QtGui.QPalette.ColorRole.HighlightedText, Qt.GlobalColor.white),
+    ):
+        p.setColor(role, colour)
+    return p
+
+
 def save(widget, path: Path) -> None:
     pixmap = widget.grab()
     if not pixmap.save(str(path), "PNG"):
@@ -67,14 +93,18 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("outdir", type=Path)
     parser.add_argument("--keep-samples", action="store_true")
+    parser.add_argument("--dark", action="store_true", help="render with a dark palette")
     args = parser.parse_args()
     args.outdir.mkdir(parents=True, exist_ok=True)
 
-    from PySide6 import QtCore, QtWidgets
+    from PySide6 import QtCore, QtGui, QtWidgets
 
     from omniconv.gui.qt_app import BackendsDialog, MainWindow, create_app
 
     app = create_app([sys.argv[0]])
+    if args.dark:
+        app.setStyle("Fusion")
+        app.setPalette(dark_palette(QtGui))
     app.processEvents()
 
     window = MainWindow()
@@ -105,6 +135,17 @@ def main() -> int:
     small.add_paths([str(p) for p in paths])
     app.processEvents()
     save(small, args.outdir / "04-minimum-size.png")
+
+    # The banner only appears on a sparse install, which is exactly the
+    # state a fresh Windows machine is in, so force it for one image.
+    window.banner.banner_label.setText(
+        "12 of 122 conversion backends are installed. Many formats need external tools "
+        "(ffmpeg, ImageMagick, Ghostscript, LibreOffice, ...). Run scripts\\install-deps.ps1 "
+        "to install them, then restart Omniconv."
+    )
+    window.banner.setVisible(True)
+    app.processEvents()
+    save(window, args.outdir / "06-sparse-install-banner.png")
 
     dialog = BackendsDialog(window)
     dialog.show()

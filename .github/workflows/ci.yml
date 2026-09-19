@@ -30,7 +30,9 @@ jobs:
       - name: Render the window
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python scripts/gui-screenshot.py screenshots
+        run: |
+          python scripts/gui-screenshot.py screenshots/light
+          python scripts/gui-screenshot.py screenshots/dark --dark
       - name: Upload screenshots
         uses: actions/upload-artifact@v4
         with:
@@ -108,7 +110,8 @@ jobs:
         run: |
           Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
           refreshenv
-          python scripts\gui-screenshot.py screenshots
+          python scripts\gui-screenshot.py screenshots\light
+          python scripts\gui-screenshot.py screenshots\dark --dark
       - name: Upload screenshots
         uses: actions/upload-artifact@v4
         with:
