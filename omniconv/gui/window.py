@@ -22,7 +22,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk  # noqa: E402
 from omniconv.core import formats  # noqa: E402
 from omniconv.core.engine import ENGINE, Result  # noqa: E402
 from omniconv.core.formats import Format  # noqa: E402
-from omniconv.core.options import OPTION_SPECS, OptionSpec  # noqa: E402
+from omniconv.core.options import OPTION_SPECS, OptionSpec, label as option_label  # noqa: E402
 from omniconv.core.registry import REGISTRY  # noqa: E402
 from omniconv.core.sniff import detect  # noqa: E402
 
@@ -408,7 +408,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.options_group.set_visible(bool(self.option_widgets))
 
     def _make_option_row(self, spec: OptionSpec) -> Gtk.Widget:
-        title = spec.name.replace("_", " ").capitalize()
+        title = option_label(spec.name)
         if spec.type is bool:
             row = Adw.SwitchRow(title=title, subtitle=spec.help)
             row.set_active(bool(spec.default))

@@ -22,7 +22,7 @@ from omniconv import __version__
 from omniconv.core import formats, platform
 from omniconv.core.engine import ENGINE, Result
 from omniconv.core.formats import Format
-from omniconv.core.options import OPTION_SPECS, OptionSpec
+from omniconv.core.options import OPTION_SPECS, OptionSpec, label as option_label
 from omniconv.core.registry import REGISTRY
 from omniconv.core.sniff import detect
 
@@ -86,9 +86,13 @@ class FileList(QtWidgets.QTreeWidget):
         self.setAcceptDrops(True)
         self.setUniformRowHeights(True)
         header = self.header()
+        header.setMinimumSectionSize(48)
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.Stretch)
         header.setStretchLastSection(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.icons = QtWidgets.QFileIconProvider()
 
     def dragEnterEvent(self, event: QtGui.QDragEnterEvent) -> None:
@@ -274,6 +278,9 @@ class MainWindow(QtWidgets.QMainWindow):
         holder.setLayout(self.stack)
         self.stack.addWidget(self.file_list)
         self.stack.addWidget(self.empty_hint)
+        # StackAll shows every page but raises the current one, so the hint
+        # has to be current or the opaque table covers it.
+        self.stack.setCurrentWidget(self.empty_hint)
         self.empty_hint.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         left_layout.addWidget(holder)
         splitter.addWidget(left)
@@ -285,15 +292,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         target_box = QtWidgets.QGroupBox("Target")
         form = QtWidgets.QFormLayout(target_box)
+        form.setRowWrapPolicy(QtWidgets.QFormLayout.RowWrapPolicy.WrapLongRows)
         self.target_combo = QtWidgets.QComboBox()
         self.target_combo.setEditable(True)
         self.target_combo.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
+        self.target_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.target_combo.setMinimumContentsLength(16)
         self.target_combo.completer().setCompletionMode(QtWidgets.QCompleter.CompletionMode.PopupCompletion)
         self.target_combo.completer().setFilterMode(Qt.MatchFlag.MatchContains)
         self.target_combo.currentIndexChanged.connect(lambda *_: self._on_target_changed())
         form.addRow("Convert to", self.target_combo)
         self.target_hint = QtWidgets.QLabel("Add files to see available targets")
         self.target_hint.setStyleSheet("color: palette(mid);")
+        self.target_hint.setWordWrap(True)
         form.addRow("", self.target_hint)
         self.route_label = QtWidgets.QLabel("—")
         self.route_label.setWordWrap(True)
@@ -307,6 +318,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         out_box = QtWidgets.QGroupBox("Output")
         form = QtWidgets.QFormLayout(out_box)
+        form.setRowWrapPolicy(QtWidgets.QFormLayout.RowWrapPolicy.WrapLongRows)
         row = QtWidgets.QHBoxLayout()
         self.outdir_edit = QtWidgets.QLineEdit()
         self.outdir_edit.setPlaceholderText("Same folder as each source file")
@@ -331,6 +343,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.options_box = QtWidgets.QGroupBox("Options")
         self.options_form = QtWidgets.QFormLayout(self.options_box)
         self.options_form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        self.options_form.setRowWrapPolicy(QtWidgets.QFormLayout.RowWrapPolicy.WrapLongRows)
         side_layout.addWidget(self.options_box)
         side_layout.addStretch(1)
 
@@ -480,8 +493,12 @@ class MainWindow(QtWidgets.QMainWindow):
                     break
         if names:
             self.target_combo.setCurrentIndex(idx)
+            # The editable combo keeps the line edit scrolled to the caret,
+            # which hides the first characters in a narrow sidebar.
+            self.target_combo.lineEdit().setCursorPosition(0)
         self.target_combo.blockSignals(False)
-        self.target_hint.setText(f"{len(names)} formats reachable from every listed file" if names else "Add files to see available targets")
+        self.target_hint.setText(f"{len(names)} formats reachable" if names else "Add files to see available targets")
+        self.target_hint.setToolTip(f"{len(names)} formats are reachable from every listed file" if names else "")
         self._on_target_changed()
 
     def selected_target(self) -> Format | None:
@@ -520,7 +537,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 continue
             widget = self._make_option_widget(spec)
             widget.setToolTip(spec.help)
-            label = spec.name.replace("_", " ").capitalize()
+            label = option_label(spec.name)
             if spec.type is bool:
                 self.options_form.addRow("", widget)
             else:
@@ -530,7 +547,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _make_option_widget(self, spec: OptionSpec) -> QtWidgets.QWidget:
         if spec.type is bool:
-            w = QtWidgets.QCheckBox(spec.name.replace("_", " ").capitalize())
+            w = QtWidgets.QCheckBox(option_label(spec.name))
             w.setChecked(bool(spec.default))
             return w
         if spec.choices:

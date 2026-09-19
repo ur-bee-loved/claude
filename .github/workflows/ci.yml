@@ -27,6 +27,16 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest -q
+      - name: Render the window
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python scripts/gui-screenshot.py screenshots
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-linux
+          path: screenshots/
+          if-no-files-found: error
 
   windows:
     name: Windows
@@ -60,6 +70,22 @@ jobs:
           Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
           refreshenv
           python -m pytest -q
+      - name: Render the window
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        # Offscreen Qt still rasterises, so this is the only way the Windows
+        # window is ever looked at: the images go up as an artifact.
+        run: |
+          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+          refreshenv
+          python scripts\gui-screenshot.py screenshots
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-windows
+          path: screenshots/
+          if-no-files-found: error
       - name: Dry-run the dependency installer
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File scripts\install-deps.ps1 -DryRun

@@ -9,7 +9,7 @@ import pytest
 pytest.importorskip("PySide6")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6 import QtCore, QtWidgets  # noqa: E402
+from PySide6 import QtCore, QtGui, QtWidgets  # noqa: E402
 
 from omniconv.gui.qt_app import MainWindow, create_app  # noqa: E402
 from tests.conftest import backend  # noqa: E402
@@ -80,3 +80,72 @@ def test_batch_conversion_updates_rows(window, samples, tmp_path):
     assert (tmp_path / "sample.webp").exists() and (tmp_path / "sample (1).webp").exists()
     assert window.open_folder_button.isVisible()
     assert "2 converted" in window.summary_label.text()
+
+
+def _drop(widget, paths):
+    """Post a real drop onto the file table, the way the shell does."""
+    mime = QtCore.QMimeData()
+    mime.setUrls([QtCore.QUrl.fromLocalFile(str(p)) for p in paths])
+    centre = widget.viewport().rect().center()
+    for cls, kind in (
+        (QtGui.QDragEnterEvent, "enter"),
+        (QtGui.QDragMoveEvent, "move"),
+        (QtGui.QDropEvent, "drop"),
+    ):
+        # Only QDropEvent takes a QPointF; the drag events take a QPoint.
+        pos = QtCore.QPointF(centre) if kind == "drop" else centre
+        event = cls(pos, QtCore.Qt.DropAction.CopyAction, mime, QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.KeyboardModifier.NoModifier)
+        # A scroll area receives drags on its viewport, not on itself.
+        QtWidgets.QApplication.sendEvent(widget.viewport(), event)
+        assert event.isAccepted(), kind
+    QtWidgets.QApplication.processEvents()
+
+
+def test_dropping_files_adds_them(window, samples):
+    _drop(window.file_list, [samples / "sample.png", samples / "sample.txt"])
+    names = sorted(e.path.name for e in window.file_list.entries())
+    assert names == ["sample.png", "sample.txt"]
+    assert not window.empty_hint.isVisible()
+
+
+def test_dropping_ignores_non_file_payloads(window):
+    mime = QtCore.QMimeData()
+    mime.setText("not a file")
+    event = QtGui.QDropEvent(
+        QtCore.QPointF(window.file_list.viewport().rect().center()),
+        QtCore.Qt.DropAction.CopyAction, mime, QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.KeyboardModifier.NoModifier,
+    )
+    QtWidgets.QApplication.sendEvent(window.file_list.viewport(), event)
+    assert window.file_list.entries() == []
+
+
+def test_empty_hint_is_on_top_of_the_table(window):
+    # StackAll draws every page; only the current one is raised, so the
+    # hint is invisible unless it is the current widget.
+    assert window.stack.currentWidget() is window.empty_hint
+    assert window.empty_hint.isVisible()
+
+
+def test_sidebar_fits_the_window_at_its_minimum_size(window, samples):
+    """A sidebar wider than its pane clips the target picker and the
+    output buttons, which is only visible in a rendered window."""
+    if not backend("pillow"):
+        pytest.skip("Pillow missing")
+    window.resize(window.minimumSize())
+    window.add_paths([str(samples / "sample.png"), str(samples / "sample.txt")])
+    QtWidgets.QApplication.processEvents()
+    scroll = window.centralWidget().widget(1)
+    assert scroll.widget().minimumSizeHint().width() <= scroll.viewport().width()
+    assert not scroll.horizontalScrollBar().isVisible()
+    assert not window.file_list.horizontalScrollBar().isVisible()
+
+
+def test_window_renders_to_a_pixmap(window, samples, tmp_path):
+    """Nothing here has a display, so rasterising the window is the only
+    check that it actually draws."""
+    window.add_paths([str(samples / "sample.png")])
+    QtWidgets.QApplication.processEvents()
+    pixmap = window.grab()
+    assert pixmap.width() == window.width() and pixmap.height() == window.height()
+    out = tmp_path / "window.png"
+    assert pixmap.save(str(out), "PNG") and out.stat().st_size > 1000
