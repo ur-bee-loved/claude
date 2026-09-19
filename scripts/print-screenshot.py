@@ -21,15 +21,26 @@ def main() -> int:
     parser.add_argument("image", type=Path)
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--chunk", type=int, default=200)
+    parser.add_argument("--colors", type=int, default=128)
+    parser.add_argument(
+        "--right",
+        type=float,
+        default=None,
+        help="keep only this fraction of the width, from the right edge: the "
+        "sidebar is where clipping shows, and a crop of it stays readable in "
+        "far fewer lines than the whole window",
+    )
     args = parser.parse_args()
 
     from PIL import Image
 
     image = Image.open(args.image)
     original = image.size
+    if args.right:
+        image = image.crop((int(image.width * (1 - args.right)), 0, image.width, image.height))
     image.thumbnail((args.width, args.width * 4), Image.LANCZOS)
     buffer = io.BytesIO()
-    image.convert("P", palette=Image.ADAPTIVE, colors=128).save(buffer, "PNG", optimize=True)
+    image.convert("P", palette=Image.ADAPTIVE, colors=args.colors).save(buffer, "PNG", optimize=True)
     data = base64.b64encode(buffer.getvalue()).decode("ascii")
     print(f"BEGIN_SCREENSHOT {args.image.name} {original[0]}x{original[1]} -> {image.width}x{image.height} {len(data)} chars")
     for i in range(0, len(data), args.chunk):

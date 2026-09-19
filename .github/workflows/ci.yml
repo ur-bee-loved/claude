@@ -357,4 +357,6 @@ jobs:
         # reviews these runs; the log is. Kept last so it lands at the end.
         run: |
           $shot = "screenshots\light\02-files-added.png"
-          if (Test-Path $shot) { python scripts\print-screenshot.py $shot --width 460 } else { Write-Host "missing $shot" }
+          # Only the sidebar, which is where clipping shows: the whole
+          # window runs to a few hundred lines of base64.
+          if (Test-Path $shot) { python scripts\print-screenshot.py $shot --right 0.42 --width 420 } else { Write-Host "missing $shot" }

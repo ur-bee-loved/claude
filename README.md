@@ -179,15 +179,34 @@ artifacts.
 
 What was verified on Windows: the CI workflow runs on a GitHub Windows
 runner with ffmpeg, ImageMagick, Ghostscript, poppler, pandoc, qpdf, 7-Zip
-and Graphviz installed through Chocolatey. There, the whole test suite
-passes (including real ffmpeg, ImageMagick, PyMuPDF and pandoc
-conversions and the headless Qt window), `omniconv doctor` finds 51
-backends, `install-deps.ps1 -DryRun` correctly recognises the nine tools
-already present and names the winget or Chocolatey package for each
-missing one, and PyInstaller builds `omniconvw.exe` and `omniconv.exe`,
-which then run `doctor` themselves. The three Windows-only bugs this
-surfaced (a replace of a file MuPDF still held open, `PATHEXT` casing in a
-test, and the same `.EXE` spelling in path comparisons) are fixed.
+and Graphviz installed through Chocolatey, and LibreOffice, calibre and
+Tesseract added by a separate step that takes about two minutes. There the
+whole test suite passes (including real ffmpeg, ImageMagick, PyMuPDF and
+pandoc conversions and the Qt window driven headlessly), `install-deps.ps1
+-DryRun` recognises the tools already present and names the winget or
+Chocolatey package for each missing one, and PyInstaller builds
+`omniconvw.exe` and `omniconv.exe`.
+
+Four further checks run there because they can only fail on Windows:
+
+* Conversions through LibreOffice and calibre, the two backends with
+  Windows-specific code in them (`soffice.com` with a profile URI, and
+  calibre's removed Unix-only ownership check).
+* A conversion of a file whose name the ANSI code page cannot encode, with
+  every stream redirected. That used to raise `UnicodeEncodeError` before
+  converting anything.
+* Both binaries self-tested with a file argument, which is what *Send to*
+  and "Open with" hand them.
+* Four conversions, a two-hop route and a merge run through the frozen
+  executable, with the same binary identifying each output afterwards: a
+  bundle can start perfectly well and still be missing the data files a
+  conversion needs.
+
+The Windows-only bugs this surfaced are fixed: a replace of a file MuPDF
+still held open, `PATHEXT` casing in a test and in path comparisons, a
+sidebar that clipped at the window's minimum size because Segoe UI needs
+about a third more room than the Linux default, and the code page failure
+above.
 
 Every winget, scoop and Chocolatey identifier in `install-deps.ps1` is
 checked against the live catalogues by `install-deps.ps1 -CheckIds`,
@@ -206,9 +225,13 @@ the Explorer "Open with" registration and the user `PATH` entry, and
 uninstalls silently, checking that the program and the registration are
 gone.
 
-Not yet verified: nothing has run on a Windows desktop with a display,
-only on the headless runner, so the window itself has been exercised
-only through Qt's offscreen platform.
+Not yet verified: nothing has run on a Windows desktop with a display.
+The window is built, laid out, rasterised and asserted against on the
+runner through Qt's offscreen platform, and drag-and-drop is driven with
+synthetic events, but the native file dialogs, real compositing and
+per-monitor DPI changes are untested. Every run uploads rendered images of
+the window as the `screenshots-windows` artifact, which is the way to look
+at it.
 
 ## Usage
 
