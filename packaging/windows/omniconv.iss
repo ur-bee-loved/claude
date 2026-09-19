@@ -26,6 +26,12 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
 ChangesEnvironment=yes
+; Per-user by default: the PATH entry, the Send-to shortcut and the
+; "Open with" registration are all per-user, so an administrative install
+; would write them into the administrator's profile rather than the
+; profile of whoever ends up using the program. The dialog still offers an
+; all-users install, and the registry writes below follow the chosen mode.
+PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 
 [Tasks]
@@ -41,11 +47,14 @@ Source: "scripts\install-deps.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversi
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
 Name: "{group}\Install conversion tools"; Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\scripts\install-deps.ps1"""; IconFilename: "{app}\{#AppExe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
+; Send to is a per-user folder; Explorer offers no all-users equivalent.
 Name: "{userappdata}\Microsoft\Windows\SendTo\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: sendto
 
 [Registry]
-; Append the install directory to the user's PATH when the task is selected.
-Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Tasks: addtopath; Check: NeedsAddPath('{app}')
+; Append the install directory to the PATH when the task is selected: the
+; user's own for a per-user install, the machine's for an all-users one.
+Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Tasks: addtopath; Check: not IsAdminInstallMode and NeedsAddPath('{app}')
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Tasks: addtopath; Check: IsAdminInstallMode and NeedsSystemPath('{app}')
 
 [Run]
 Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\scripts\install-deps.ps1"""; Description: "Install conversion tools now (ffmpeg, ImageMagick, Ghostscript, ...)"; Flags: postinstall nowait skipifsilent unchecked
@@ -57,15 +66,28 @@ Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: postinstal
 const
   OpenWithTypes = '.png .jpg .jpeg .gif .bmp .tiff .tif .webp .heic .avif .svg .pdf .epub .docx .odt .md .txt .html .csv .json .mp3 .wav .flac .ogg .opus .m4a .mp4 .mkv .webm .mov .avi .zip .7z .ttf .otf .woff .woff2';
 
+function ClassesRoot(): Integer;
+begin
+  // An all-users install registers for the machine, a per-user one for the
+  // user; writing HKCU from an administrative install would only configure
+  // the administrator's own profile.
+  if IsAdminInstallMode then
+    Result := HKEY_LOCAL_MACHINE
+  else
+    Result := HKEY_CURRENT_USER;
+end;
+
 procedure RegisterOpenWith();
 var
   Types, Ext: string;
   P: Integer;
   Base: string;
+  Root: Integer;
 begin
+  Root := ClassesRoot();
   Base := 'Software\Classes\Applications\omniconvw.exe';
-  RegWriteStringValue(HKEY_CURRENT_USER, Base, 'FriendlyAppName', 'Omniconv');
-  RegWriteStringValue(HKEY_CURRENT_USER, Base + '\shell\open\command', '', '"' + ExpandConstant('{app}\omniconvw.exe') + '" "%1"');
+  RegWriteStringValue(Root, Base, 'FriendlyAppName', 'Omniconv');
+  RegWriteStringValue(Root, Base + '\shell\open\command', '', '"' + ExpandConstant('{app}\omniconvw.exe') + '" "%1"');
   Types := OpenWithTypes + ' ';
   while Length(Types) > 0 do
   begin
@@ -73,7 +95,7 @@ begin
     Ext := Copy(Types, 1, P - 1);
     Types := Copy(Types, P + 1, Length(Types));
     if Ext <> '' then
-      RegWriteStringValue(HKEY_CURRENT_USER, Base + '\SupportedTypes', Ext, '');
+      RegWriteStringValue(Root, Base + '\SupportedTypes', Ext, '');
   end;
 end;
 
@@ -86,17 +108,27 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usPostUninstall then
-    RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Classes\Applications\omniconvw.exe');
+    RegDeleteKeyIncludingSubkeys(ClassesRoot(), 'Software\Classes\Applications\omniconvw.exe');
 end;
 
-function NeedsAddPath(Param: string): boolean;
+function PathMissing(Root: Integer; Subkey, Param: string): boolean;
 var
   OrigPath: string;
 begin
-  if not RegQueryStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', OrigPath) then
+  if not RegQueryStringValue(Root, Subkey, 'Path', OrigPath) then
   begin
     Result := True;
     exit;
   end;
   Result := Pos(';' + Uppercase(Param) + ';', ';' + Uppercase(OrigPath) + ';') = 0;
+end;
+
+function NeedsAddPath(Param: string): boolean;
+begin
+  Result := PathMissing(HKEY_CURRENT_USER, 'Environment', Param);
+end;
+
+function NeedsSystemPath(Param: string): boolean;
+begin
+  Result := PathMissing(HKEY_LOCAL_MACHINE, 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment', Param);
 end;

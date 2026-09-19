@@ -138,13 +138,17 @@ jobs:
           $setup = Resolve-Path dist\Omniconv-Setup.exe
           $p = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS="addtopath,sendto"' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "setup exited with $($p.ExitCode)" }
-          $app = "$env:ProgramFiles\Omniconv"
-          if (-not (Test-Path "$app\omniconvw.exe")) { throw "omniconvw.exe not installed" }
+          # The installer defaults to a per-user install; accept either layout.
+          $app = "$env:LOCALAPPDATA\Programs\Omniconv"
+          if (-not (Test-Path "$app\omniconvw.exe")) { $app = "$env:ProgramFiles\Omniconv" }
+          if (-not (Test-Path "$app\omniconvw.exe")) { throw "omniconvw.exe not installed under LocalAppData\Programs or Program Files" }
           if (-not (Test-Path "$app\omniconv.exe")) { throw "omniconv.exe not installed" }
+          Write-Host "installed into $app"
           & "$app\omniconv.exe" --version
           if ($LASTEXITCODE -ne 0) { throw "installed CLI failed" }
-          $menu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Omniconv\Omniconv.lnk"
-          if (-not (Test-Path $menu)) { throw "Start Menu shortcut missing: $menu" }
+          $menu = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Omniconv\Omniconv.lnk"
+          if (-not (Test-Path $menu)) { $menu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Omniconv\Omniconv.lnk" }
+          if (-not (Test-Path $menu)) { throw "Start Menu shortcut missing" }
           $sendto = "$env:APPDATA\Microsoft\Windows\SendTo\Omniconv.lnk"
           if (-not (Test-Path $sendto)) { throw "Send to shortcut missing: $sendto" }
           $openwith = Get-ItemProperty "HKCU:\Software\Classes\Applications\omniconvw.exe\SupportedTypes" -ErrorAction Stop

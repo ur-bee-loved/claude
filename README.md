@@ -153,7 +153,10 @@ filenames are case-insensitive and two such names are one file, and when Inno Se
 `dist\Omniconv-Setup.exe`, an installer with Start Menu and desktop
 shortcuts, an optional `PATH` entry, an Explorer *Send to* entry, an
 "Open with" registration for common formats and an offer to run the
-dependency installer. The GitHub Actions workflow builds the same
+dependency installer. It installs for the current user by default, so it
+needs no administrator prompt and its per-user `PATH`, *Send to* and
+"Open with" entries belong to the person using it; the wizard still
+offers an all-users install, which registers for the machine instead. The GitHub Actions workflow builds the same
 executables and the installer on every pull request and attaches them as
 the `Omniconv-windows` and `Omniconv-windows-installer` artifacts.
 
