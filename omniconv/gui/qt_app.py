@@ -153,6 +153,32 @@ class FileList(QtWidgets.QTreeWidget):
         return None
 
 
+class DropArea(QtWidgets.QWidget):
+    """Holds the file table and the empty page, and accepts drops over
+    both. The GTK window attaches its drop controller to the whole pane
+    in the same way."""
+
+    files_dropped = Signal(list)
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event: QtGui.QDragEnterEvent) -> None:
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event: QtGui.QDragMoveEvent) -> None:
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event: QtGui.QDropEvent) -> None:
+        paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
+        if paths:
+            self.files_dropped.emit(paths)
+            event.acceptProposedAction()
+
+
 class Worker(QtCore.QThread):
     """Runs the conversions off the GUI thread."""
 
@@ -269,19 +295,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.file_list = FileList()
         self.file_list.files_dropped.connect(self.add_paths)
         self.file_list.itemSelectionChanged.connect(lambda: self.act_remove.setEnabled(bool(self.file_list.selectedItems())))
-        self.empty_hint = QtWidgets.QLabel("Drop files here, or use File ▸ Add files.\nThen pick a target format on the right.")
-        self.empty_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty_hint.setStyleSheet("color: palette(mid); font-size: 11pt;")
-        self.stack = QtWidgets.QStackedLayout()
-        self.stack.setStackingMode(QtWidgets.QStackedLayout.StackingMode.StackAll)
-        holder = QtWidgets.QWidget()
-        holder.setLayout(self.stack)
+        self.file_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.file_list.customContextMenuRequested.connect(self._file_context_menu)
+        self.empty_page = self._make_empty_page()
+        holder = DropArea()
+        holder.files_dropped.connect(self.add_paths)
+        self.stack = QtWidgets.QStackedLayout(holder)
+        self.stack.addWidget(self.empty_page)
         self.stack.addWidget(self.file_list)
-        self.stack.addWidget(self.empty_hint)
-        # StackAll shows every page but raises the current one, so the hint
-        # has to be current or the opaque table covers it.
-        self.stack.setCurrentWidget(self.empty_hint)
-        self.empty_hint.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         left_layout.addWidget(holder)
         splitter.addWidget(left)
 
@@ -373,6 +394,35 @@ class MainWindow(QtWidgets.QMainWindow):
         # genuinely needs more than that leaves over.
         self.setMinimumWidth(max(700, files + side + self.splitter.handleWidth()))
 
+    def _make_empty_page(self) -> QtWidgets.QWidget:
+        page = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(page)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setSpacing(10)
+        icon = QtWidgets.QLabel()
+        pixmap = self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_DirOpenIcon).pixmap(64, 64)
+        icon.setPixmap(pixmap)
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title = QtWidgets.QLabel("No files yet")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        font = title.font()
+        font.setPointSize(max(font.pointSize() + 4, 14))
+        font.setBold(True)
+        title.setFont(font)
+        description = QtWidgets.QLabel("Drop files here, or press the button below.\nThen pick a target format on the right.")
+        description.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        description.setStyleSheet("color: palette(mid);")
+        button = QtWidgets.QPushButton("Add files…")
+        button.clicked.connect(self.open_file_dialog)
+        row = QtWidgets.QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(button)
+        row.addStretch(1)
+        for widget in (icon, title, description):
+            layout.addWidget(widget)
+        layout.addLayout(row)
+        return page
+
     def _make_backend_banner(self) -> QtWidgets.QFrame:
         """Shown when fewer than half of the backends are usable, which is
         the state of a fresh pip install before any external tools exist."""
@@ -432,6 +482,35 @@ class MainWindow(QtWidgets.QMainWindow):
         dock.addPermanentWidget(bar, 1)
         dock.setSizeGripEnabled(True)
         self.setStatusBar(dock)
+
+    def _file_context_menu(self, point: QtCore.QPoint) -> None:
+        menu = self.build_file_menu(point)
+        menu.exec(self.file_list.viewport().mapToGlobal(point))
+
+    def build_file_menu(self, point: QtCore.QPoint) -> QtWidgets.QMenu:
+        """Per-row actions. The GTK rows carry their own remove button;
+        on Windows the same thing belongs in a context menu."""
+        menu = QtWidgets.QMenu(self)
+        item = self.file_list.itemAt(point)
+        if item is not None and not item.isSelected():
+            self.file_list.setCurrentItem(item)
+        menu.addAction(self.act_add)
+        menu.addAction(self.act_add_folder)
+        if self.file_list.selectedItems():
+            menu.addSeparator()
+            menu.addAction(self.act_remove)
+            show = menu.addAction("Show in file manager")
+            show.triggered.connect(self._show_selected_in_file_manager)
+        if self.file_list.topLevelItemCount():
+            menu.addSeparator()
+            menu.addAction(self.act_clear)
+        return menu
+
+    def _show_selected_in_file_manager(self) -> None:
+        items = self.file_list.selectedItems()
+        if items:
+            entry: FileEntry = items[0].data(0, Qt.ItemDataRole.UserRole)
+            platform.open_in_file_manager(entry.path.parent)
 
     # ------------------------------------------------------------- files
     def open_file_dialog(self) -> None:
@@ -696,7 +775,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _update_summary(self) -> None:
         entries = self.file_list.entries()
-        self.empty_hint.setVisible(not entries)
+        self.stack.setCurrentWidget(self.file_list if entries else self.empty_page)
         unknown = sum(1 for e in entries if e.format is None)
         if not entries:
             self.summary_label.setText("Drop files here or press Ctrl+O to begin")

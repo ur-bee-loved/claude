@@ -82,11 +82,11 @@ def test_batch_conversion_updates_rows(window, samples, tmp_path):
     assert "2 converted" in window.summary_label.text()
 
 
-def _drop(widget, paths):
-    """Post a real drop onto the file table, the way the shell does."""
+def _drop_on(widget, paths, viewport=False):
+    """Post a real drop, the way the shell does."""
     mime = QtCore.QMimeData()
     mime.setUrls([QtCore.QUrl.fromLocalFile(str(p)) for p in paths])
-    centre = widget.viewport().rect().center()
+    centre = (widget.viewport() if viewport else widget).rect().center()
     for cls, kind in (
         (QtGui.QDragEnterEvent, "enter"),
         (QtGui.QDragMoveEvent, "move"),
@@ -96,16 +96,17 @@ def _drop(widget, paths):
         pos = QtCore.QPointF(centre) if kind == "drop" else centre
         event = cls(pos, QtCore.Qt.DropAction.CopyAction, mime, QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.KeyboardModifier.NoModifier)
         # A scroll area receives drags on its viewport, not on itself.
-        QtWidgets.QApplication.sendEvent(widget.viewport(), event)
+        QtWidgets.QApplication.sendEvent(widget.viewport() if viewport else widget, event)
         assert event.isAccepted(), kind
     QtWidgets.QApplication.processEvents()
 
 
 def test_dropping_files_adds_them(window, samples):
-    _drop(window.file_list, [samples / "sample.png", samples / "sample.txt"])
+    window.add_paths([str(samples / "sample.md")])  # the table is only shown once it has a row
+    _drop_on(window.file_list, [samples / "sample.png", samples / "sample.txt"], viewport=True)
     names = sorted(e.path.name for e in window.file_list.entries())
-    assert names == ["sample.png", "sample.txt"]
-    assert not window.empty_hint.isVisible()
+    assert names == ["sample.md", "sample.png", "sample.txt"]
+    assert window.stack.currentWidget() is window.file_list
 
 
 def test_dropping_ignores_non_file_payloads(window):
@@ -119,11 +120,21 @@ def test_dropping_ignores_non_file_payloads(window):
     assert window.file_list.entries() == []
 
 
-def test_empty_hint_is_on_top_of_the_table(window):
-    # StackAll draws every page; only the current one is raised, so the
-    # hint is invisible unless it is the current widget.
-    assert window.stack.currentWidget() is window.empty_hint
-    assert window.empty_hint.isVisible()
+def test_empty_page_is_shown_until_files_arrive(window, samples):
+    assert window.stack.currentWidget() is window.empty_page
+    assert window.empty_page.isVisible()
+    window.add_paths([str(samples / "sample.txt")])
+    assert window.stack.currentWidget() is window.file_list
+    window.clear_files()
+    assert window.stack.currentWidget() is window.empty_page
+
+
+def test_dropping_onto_the_empty_page_adds_files(window, samples):
+    """With no files the table is hidden, so the drop has to be taken by
+    the pane around it."""
+    holder = window.stack.parentWidget()
+    _drop_on(holder, [samples / "sample.txt"])
+    assert [e.path.name for e in window.file_list.entries()] == ["sample.txt"]
 
 
 def test_sidebar_fits_the_window_at_its_minimum_size(window, samples):
@@ -175,3 +186,22 @@ def test_sidebar_fits_at_any_font_size(app, samples, point_size):
         w.close()
     finally:
         app.setFont(original)
+
+
+def test_context_menu_offers_the_per_row_actions(window, samples):
+    """The GTK rows carry a remove button; the Qt window puts the same
+    actions in a context menu."""
+    window.add_paths([str(samples / "sample.txt")])
+    item = window.file_list.topLevelItem(0)
+    item.setSelected(True)
+    menu = window.build_file_menu(window.file_list.visualItemRect(item).center())
+    labels = [a.text() for a in menu.actions() if not a.isSeparator()]
+    assert any("Remove" in t for t in labels), labels
+    assert any("Show in file manager" in t for t in labels), labels
+    assert any("Clear" in t for t in labels), labels
+
+
+def test_context_menu_without_a_selection_offers_only_adding(window):
+    labels = [a.text() for a in window.build_file_menu(QtCore.QPoint(0, 0)).actions() if not a.isSeparator()]
+    assert all("Remove" not in t and "Clear" not in t for t in labels), labels
+    assert any("Add" in t for t in labels), labels
