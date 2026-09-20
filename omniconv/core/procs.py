@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Sequence
 
 from omniconv.core.errors import ConversionError
+from omniconv.core.platform import hidden_console_kwargs
 
 DEFAULT_TIMEOUT = 1800
 
@@ -38,6 +39,7 @@ def run(
             stderr=subprocess.PIPE,
             timeout=timeout,
             check=False,
+            **hidden_console_kwargs(),
         )
     except FileNotFoundError as exc:
         raise ConversionError(f"command not found: {argv[0]}") from exc

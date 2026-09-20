@@ -493,12 +493,17 @@ def ffmpeg_slideshow(job: Job) -> list[Path]:
     # The concat demuxer takes a list file; each image is shown for 1/fps seconds.
     listing = job.workdir / "slides.txt"
     lines = []
+    def entry(path: Path) -> str:
+        # Forward slashes are accepted on every platform and avoid the concat
+        # demuxer treating Windows backslashes as escape characters.
+        text = str(path.resolve()).replace("\\", "/").replace("'", "'\\''")
+        return f"file '{text}'"
+
     for src in job.sources:
-        escaped = str(src.resolve()).replace("'", "'\\''")
-        lines.append(f"file '{escaped}'")
+        lines.append(entry(src))
         lines.append(f"duration {1 / fps}")
     if job.sources:
-        lines.append(f"file '{str(job.sources[-1].resolve()).replace(chr(39), chr(39) + chr(92) + chr(39) + chr(39))}'")
+        lines.append(entry(job.sources[-1]))
     listing.write_text("\n".join(lines) + "\n", encoding="utf-8")
     w, h = job.opt("width") or 1280, job.opt("height") or 720
     filters = [f"scale={int(w)}:{int(h)}:force_original_aspect_ratio=decrease", f"pad={int(w)}:{int(h)}:(ow-iw)/2:(oh-ih)/2", "setsar=1", f"fps={max(fps, 1)}"]

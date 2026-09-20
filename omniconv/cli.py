@@ -263,13 +263,15 @@ def _describe(path: Path, fmt: formats.Format) -> dict[str, Any]:
 
 
 def cmd_gui(args: argparse.Namespace) -> int:
-    try:
-        from omniconv.gui.app import run_app
-    except ImportError as exc:
-        print(f"the graphical interface needs GTK 4 and libadwaita Python bindings: {exc}", file=sys.stderr)
-        print("On Debian/Ubuntu: sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1", file=sys.stderr)
-        return 1
-    return run_app(args.inputs)
+    from omniconv.gui import launcher
+
+    if args.toolkit:
+        import os
+
+        os.environ["OMNICONV_TOOLKIT"] = args.toolkit
+    if getattr(args, "self_test", False):
+        return launcher.self_test(args.inputs)
+    return launcher.run(args.inputs)
 
 
 # --------------------------------------------------------------------- main
@@ -322,11 +324,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("gui", help="open the graphical interface")
     p.add_argument("inputs", nargs="*")
+    p.add_argument("--toolkit", choices=("gtk", "qt"), help="force a toolkit (default: GTK on Linux, Qt on Windows and macOS)")
+    p.add_argument("--self-test", action="store_true", help="build the window, report what happened and exit (for diagnosing an installation)")
     p.set_defaults(func=cmd_gui)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
+    from omniconv.core import platform
+
+    platform.configure_console()
     argv = list(sys.argv[1:] if argv is None else argv)
     # Shortcut: "omniconv in.png out.webp" or "omniconv in.png -t webp".
     if argv and argv[0] not in ("convert", "merge", "formats", "route", "doctor", "info", "gui", "-h", "--help", "--version") and Path(argv[0]).exists():
@@ -338,12 +345,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not args.command:
         if not argv:
-            try:
-                from omniconv.gui.app import run_app  # noqa: F401
+            from omniconv.gui import launcher
 
-                return cmd_gui(argparse.Namespace(inputs=[]))
-            except ImportError:
-                pass
+            if launcher.choose_toolkit():
+                return cmd_gui(argparse.Namespace(inputs=[], toolkit=None))
         parser.print_help()
         return 0
     try:

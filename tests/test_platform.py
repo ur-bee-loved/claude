@@ -1,0 +1,187 @@
+"""The tool finder, exercised with a simulated Windows layout on any OS."""
+
+from __future__ import annotations
+
+import os
+import shutil
+import sys
+from pathlib import Path
+
+import pytest
+
+from omniconv.core import platform
+
+
+@pytest.fixture
+def fake_windows(tmp_path, monkeypatch):
+    """Pretend to be Windows with Program Files under ``tmp_path``."""
+    pf = tmp_path / "Program Files"
+    pf.mkdir()
+    monkeypatch.setattr(platform, "IS_WINDOWS", True)
+    monkeypatch.setattr(platform, "IS_MAC", False)
+    monkeypatch.setenv("ProgramFiles", str(pf))
+    monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path / "missing-x86"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    monkeypatch.setenv("ProgramData", str(tmp_path / "programdata"))
+    monkeypatch.setattr(platform, "_WINDOWS_ROOTS", ("%ProgramFiles%", "%ProgramFiles(x86)%", "%LOCALAPPDATA%\\Programs", "%LOCALAPPDATA%", "%ProgramData%"))
+    monkeypatch.setattr(platform, "_WINDOWS_EXTRA_DIRS", (str(tmp_path / "shims"),))
+    # An empty PATH, so that tools really installed on the test machine
+    # cannot satisfy a lookup that should come from the simulated layout.
+    (tmp_path / "emptybin").mkdir()
+    monkeypatch.setenv("PATH", str(tmp_path / "emptybin"))
+    platform.reset_cache()
+    yield pf
+    platform.reset_cache()
+
+
+def _touch(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"MZ")
+    return path
+
+
+def _shim(directory: Path, name: str) -> tuple[Path, Path]:
+    """Create ``name`` and ``name.exe`` side by side: ``shutil.which`` on
+    Windows only matches names with a PATHEXT extension, on Linux only the
+    bare name, and the tests must hold on both."""
+    bare = _touch(directory / name)
+    bare.chmod(0o755)
+    exe = _touch(directory / f"{name}.exe")
+    exe.chmod(0o755)
+    return bare, exe
+
+
+def test_expand_handles_windows_style_variables(monkeypatch):
+    monkeypatch.setenv("OMNI_TEST_VAR", "value")
+    assert platform._expand("%OMNI_TEST_VAR%/x") == "value/x"
+    assert platform._expand("%OMNI_UNSET_VAR%/x") == ""
+
+
+def test_known_install_directory_is_found(fake_windows):
+    exe = _touch(fake_windows / "LibreOffice" / "program" / "soffice.com")
+    assert platform.find_executable("soffice") == str(exe)
+
+
+def test_newest_versioned_directory_wins(fake_windows):
+    _touch(fake_windows / "gs" / "gs9.56" / "bin" / "gswin64c.exe")
+    newest = _touch(fake_windows / "gs" / "gs10.03" / "bin" / "gswin64c.exe")
+    # "gs" is what the backends ask for; Windows names it gswin64c.
+    assert platform.find_executable("gs") == str(newest)
+
+
+def test_convert_is_never_looked_up_on_windows(fake_windows, tmp_path, monkeypatch):
+    # A "convert" on PATH (the NTFS filesystem converter on Windows, or
+    # ImageMagick 6 on Linux) must never be used.
+    bindir = tmp_path / "system32"
+    _shim(bindir, "convert")
+    monkeypatch.setenv("PATH", str(bindir))
+    platform.reset_cache()
+    assert shutil.which("convert") is not None
+    assert platform.find_executable("convert") is None
+
+
+def test_shim_directory_is_searched(fake_windows, tmp_path):
+    shims = tmp_path / "shims"
+    bare, exe = _shim(shims, "qpdf")
+    assert shutil.which("qpdf") is None
+    found = platform.find_executable("qpdf")
+    # Windows may report the PATHEXT spelling (qpdf.EXE); compare case-insensitively.
+    assert found is not None and os.path.normcase(found) in {os.path.normcase(str(bare)), os.path.normcase(str(exe))}
+
+
+def test_version_key_orders_numerically():
+    names = ["gs9.56", "gs10.03", "gs10.02", "gs8.71"]
+    assert sorted(names, key=platform._version_key) == ["gs8.71", "gs9.56", "gs10.02", "gs10.03"]
+
+
+def test_missing_tool_returns_none(fake_windows):
+    assert platform.find_executable("definitely-not-a-tool-xyz") is None
+
+
+def test_native_lookup_agrees_with_which():
+    platform.reset_cache()
+    # python is on PATH wherever the tests run; the finder must agree.
+    name = "python" if platform.IS_WINDOWS else "python3"
+    assert platform.find_executable(name) == shutil.which(name)
+    kwargs = platform.hidden_console_kwargs()
+    assert (kwargs == {}) != platform.IS_WINDOWS
+
+
+def test_console_is_reconfigured_for_names_windows_cannot_encode(monkeypatch):
+    """A redirected stream on Windows uses the ANSI code page, so a path
+    outside it raises UnicodeEncodeError before any conversion runs."""
+    import io
+
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="cp1252", errors="strict", newline="")
+    monkeypatch.setattr(platform, "IS_WINDOWS", True)
+    monkeypatch.setattr(sys, "stdout", stream)
+    monkeypatch.setattr(sys, "stderr", stream)
+    with pytest.raises(UnicodeEncodeError):
+        stream.write("日本語.png")
+    platform.configure_console()
+    assert stream.encoding == "utf-8"
+    stream.write("日本語.png")
+    stream.flush()
+    assert "日本語.png" in raw.getvalue().decode("utf-8")
+
+
+def test_console_is_left_alone_off_windows(monkeypatch):
+    monkeypatch.setattr(platform, "IS_WINDOWS", False)
+    before = sys.stdout.encoding
+    platform.configure_console()
+    assert sys.stdout.encoding == before
+
+
+def test_reveal_selects_the_file_on_windows(monkeypatch):
+    """Explorer rejects the quoting subprocess applies to a list, so the
+    command line is built by hand and must stay that way."""
+    import subprocess
+
+    calls = []
+    monkeypatch.setattr(platform, "IS_WINDOWS", True)
+    monkeypatch.setattr(platform, "IS_MAC", False)
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: calls.append((a, k)))
+    platform.reveal_in_file_manager(Path(r"C:\My Files\holiday photo.png"))
+    (args, _), = calls
+    assert args[0] == 'explorer /select,"C:\\My Files\\holiday photo.png"'
+    assert isinstance(args[0], str), "a list would be requoted by subprocess"
+
+
+def test_reveal_opens_the_folder_elsewhere(monkeypatch, tmp_path):
+    opened = []
+    monkeypatch.setattr(platform, "IS_WINDOWS", False)
+    monkeypatch.setattr(platform, "IS_MAC", False)
+    monkeypatch.setattr(platform, "open_in_file_manager", opened.append)
+    platform.reveal_in_file_manager(tmp_path / "a.png")
+    assert opened == [tmp_path]
+
+
+def test_processes_are_spawned_in_one_place_only(monkeypatch):
+    """Anything spawning a subprocess outside procs.run would flash a
+    console window on Windows, because that is where the flags to suppress
+    it are applied. platform.py is exempt: it launches the file manager,
+    which is a windowed program."""
+    import re
+
+    root = Path(platform.__file__).resolve().parent.parent
+    pattern = re.compile(r"subprocess\.(run|Popen|call|check_output|check_call)")
+    offenders = sorted(
+        str(path.relative_to(root))
+        for path in root.rglob("*.py")
+        if path.name not in ("procs.py", "platform.py") and pattern.search(path.read_text(encoding="utf-8"))
+    )
+    assert offenders == [], offenders
+
+
+def test_the_windowed_entry_point_configures_the_console(monkeypatch):
+    """A windowed executable has no streams until its output is redirected,
+    and then they use the ANSI code page like any other."""
+    from omniconv.gui import launcher
+
+    calls = []
+    monkeypatch.setattr(platform, "configure_console", lambda: calls.append(True))
+    monkeypatch.setattr(sys, "argv", ["omniconvw", "--self-test"])
+    monkeypatch.setattr(launcher, "self_test", lambda files=None: 0)
+    assert launcher.main() == 0
+    assert calls == [True]

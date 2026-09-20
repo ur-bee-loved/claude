@@ -19,8 +19,8 @@ install:
 	install -Dm644 $(DATA)/$(APP_ID).desktop      $(PREFIX)/share/applications/$(APP_ID).desktop
 	install -Dm644 $(DATA)/$(APP_ID).svg          $(PREFIX)/share/icons/hicolor/scalable/apps/$(APP_ID).svg
 	install -Dm644 $(DATA)/$(APP_ID).metainfo.xml $(PREFIX)/share/metainfo/$(APP_ID).metainfo.xml
-	-update-desktop-database $(PREFIX)/share/applications 2>/dev/null
-	-gtk-update-icon-cache -q $(PREFIX)/share/icons/hicolor 2>/dev/null
+	-update-desktop-database $(PREFIX)/share/applications 2>/dev/null || true
+	-gtk-update-icon-cache -q -t -f $(PREFIX)/share/icons/hicolor 2>/dev/null || true
 	@echo "installed; run 'omniconv gui' or find Omniconv in your application menu"
 
 uninstall:

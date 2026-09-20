@@ -75,6 +75,15 @@ OPTION_SPECS: dict[str, OptionSpec] = {s.name: s for s in [
 # fmt: on
 
 
+ACRONYMS = {"dpi": "DPI", "crf": "CRF", "fps": "FPS", "ocr": "OCR"}
+
+
+def label(name: str) -> str:
+    """Human label for an option, shared by both GUIs so they agree."""
+    words = [ACRONYMS.get(w, w) for w in name.split("_")]
+    return " ".join([words[0] if words[0] in ACRONYMS.values() else words[0].capitalize(), *words[1:]])
+
+
 def coerce_options(raw: dict[str, Any]) -> dict[str, Any]:
     """Normalise user-provided option values according to the specs; unknown
     keys are passed through untouched so backends can accept extras."""
