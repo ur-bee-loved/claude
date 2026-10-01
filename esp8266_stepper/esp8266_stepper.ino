@@ -1,7 +1,7 @@
-const int IN1 = D1;
-const int IN2 = D2;
-const int IN3 = D5;
-const int IN4 = D6;
+const int IN1 = 5;
+const int IN2 = 4;
+const int IN3 = 14;
+const int IN4 = 12;
 
 const int pins[4] = {IN1, IN2, IN3, IN4};
 
