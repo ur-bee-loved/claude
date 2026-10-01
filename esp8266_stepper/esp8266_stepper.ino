@@ -1,7 +1,7 @@
-const int IN1 = 19;
-const int IN2 = 18;
-const int IN3 = 5;
-const int IN4 = 17;
+const int IN1 = D1;
+const int IN2 = D2;
+const int IN3 = D5;
+const int IN4 = D6;
 
 const int pins[4] = {IN1, IN2, IN3, IN4};
 
@@ -39,6 +39,7 @@ void rotate(int steps, bool clockwise) {
       digitalWrite(pins[i], sequence[phase][i]);
     }
     delayMicroseconds(STEP_DELAY_US);
+    yield();
   }
   release();
 }
