@@ -72,7 +72,7 @@ def parse_datetime(value, assume=BR):
     except ValueError:
         for fmt in (BR_FMT, "%d/%m/%Y %H:%M", "%d/%m/%Y"):
             try:
-                d = dt.datetime.strptime(s, fmt)
+                d = dt.datetime.strptime(s, fmt).replace(tzinfo=assume)
                 break
             except ValueError:
                 continue
