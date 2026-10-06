@@ -8,6 +8,7 @@ either in UTC or in Brazil's format (dd/mm/aaaa HH:MM:SS, America/Sao_Paulo).
 import argparse
 import csv
 import datetime as dt
+import math
 import os
 import re
 import shutil
@@ -24,10 +25,19 @@ try:
 except ImportError:
     ZoneInfo = None
 
+VERSION = "1.1.0"
+PROG = "netaudit"
+TOOL_DIR = Path(__file__).resolve().parent
+SQL_DIR = TOOL_DIR / "sql"
 UTC = dt.timezone.utc
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 UTC_FMT = "%Y-%m-%dT%H:%M:%SZ"
 BR_FMT = "%d/%m/%Y %H:%M:%S"
+
+
+def die(msg, code=1):
+    print(f"{PROG}: error: {msg}", file=sys.stderr)
+    sys.exit(code)
 
 
 def brazil_tz():
@@ -60,14 +70,14 @@ def parse_datetime(value, assume=BR):
     try:
         d = dt.datetime.fromisoformat(s)
     except ValueError:
-        for fmt in (BR_FMT, "%d/%m/%Y %H:%M"):
+        for fmt in (BR_FMT, "%d/%m/%Y %H:%M", "%d/%m/%Y"):
             try:
                 d = dt.datetime.strptime(s, fmt)
                 break
             except ValueError:
                 continue
         else:
-            raise ValueError(f"unrecognised datetime: {value!r}")
+            raise ValueError(f"unrecognised datetime: {value!r}") from None
     if d.tzinfo is None:
         d = d.replace(tzinfo=assume)
     return d.astimezone(UTC).replace(microsecond=0)
@@ -88,6 +98,17 @@ def tz_label(tz):
     return "UTC" if tz == "utc" else f"{getattr(BR, 'key', BR)} (dd/mm/aaaa)"
 
 
+def bound(value, tz, end=False):
+    """--since/--until value to UTC. Naive input is read in the --tz zone; a bare date given to --until includes that whole day."""
+    if value is None:
+        return None
+    zone = UTC if tz == "utc" else BR
+    d = parse_datetime(value, assume=zone)
+    if end and re.fullmatch(r"\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4}", value.strip()):
+        d += dt.timedelta(days=1)
+    return d.strftime(UTC_FMT)
+
+
 def hosts_of(path):
     hosts = []
     with open(path) as f:
@@ -106,7 +127,7 @@ def get_db_connection(path):
         conn.execute('PRAGMA foreign_keys = ON')
         return conn
     except sqlite3.Error as e:
-        print(f"Erro na conexão: {e}")
+        print(f"Erro na conexão: {e}", file=sys.stderr)
         return None
 
 
@@ -117,7 +138,8 @@ def create_schema(conn):
             CREATE TABLE IF NOT EXISTS Audits (
                 auditId   INTEGER PRIMARY KEY AUTOINCREMENT,
                 auditDate TEXT NOT NULL,
-                source    TEXT
+                source    TEXT,
+                folder    TEXT
             );
 
             CREATE TABLE IF NOT EXISTS RedeAudit (
@@ -176,10 +198,13 @@ def create_schema(conn):
                        target, status, hop, ip, loss_pct, sent, last_ms, avg_ms, best_ms, worst_ms, stdev_ms
                 FROM MtrAudit;
         ''')
+        if "folder" not in {r[1] for r in conn.execute("PRAGMA table_info(Audits)")}:
+            conn.execute("ALTER TABLE Audits ADD COLUMN folder TEXT")
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.commit()
         return True
     except sqlite3.Error as e:
-        print(f"Erro ao criar schema: {e}")
+        print(f"Erro ao criar schema: {e}", file=sys.stderr)
         return False
 
 
@@ -194,35 +219,65 @@ def unsanitized_count(conn):
 
 
 def open_db(path):
-    """Open the database, create the schema, and refuse to mix UTC rows with unsanitized ones."""
+    """Open the database, create or upgrade the schema, and refuse to mix UTC rows with unsanitized ones."""
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     conn = get_db_connection(path)
     if conn is None:
         sys.exit(1)
     version = conn.execute("PRAGMA user_version").fetchone()[0]
-    if version < SCHEMA_VERSION and unsanitized_count(conn):
+    if version < 1 and unsanitized_count(conn):
         conn.close()
-        sys.exit(f"{path} has datetimes not yet in UTC; run: {Path(sys.argv[0]).name} --db {path} migrate")
+        die(f"{path} has datetimes not yet in UTC; run: {PROG} --db {path} migrate")
     if not create_schema(conn):
         sys.exit(1)
-    conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     return conn
 
 
-def create_audit(conn, audit_date, source):
+def open_db_readonly(path):
+    if not Path(path).is_file():
+        die(f"no database: {path}")
+    open_db(path).close()
+    conn = sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True)
     try:
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO Audits (auditDate, source) VALUES (?, ?)",
-            (audit_date.strftime(UTC_FMT), source),
-        )
-        conn.commit()
-        audit_id = cursor.lastrowid
-        print(f"Audit criado: auditId={audit_id} ({audit_date.strftime(UTC_FMT)})")
-        return audit_id
-    except sqlite3.Error as e:
-        print(f"Erro ao criar audit: {e}")
-        return None
+        conn.execute("SELECT sqrt(4)")
+    except sqlite3.OperationalError:
+        conn.create_function("sqrt", 1, lambda x: math.sqrt(x) if x is not None and x >= 0 else None, deterministic=True)
+    return conn
 
+
+def resolve_audit(conn, audit):
+    if audit == "latest":
+        audit = conn.execute("SELECT max(auditId) FROM Audits").fetchone()[0]
+        if audit is None:
+            die("the database has no audits yet")
+    elif conn.execute("SELECT 1 FROM Audits WHERE auditId = ?", (audit,)).fetchone() is None:
+        die(f"no audit {audit} in the database (see '{PROG} audits')")
+    return audit
+
+
+def create_audit(conn, audit_date, source, audits_dir, db_path):
+    """Insert an Audits row and create its folder, named <UTC start>_audit<id>. Without a connection the folder ends in _nodb."""
+    stamp = audit_date.strftime("%Y%m%dT%H%M%SZ")
+    if conn is None:
+        folder = audits_dir / f"{stamp}_nodb"
+        folder.mkdir(parents=True, exist_ok=True)
+        return None, folder
+    cursor = conn.execute(
+        "INSERT INTO Audits (auditDate, source) VALUES (?, ?)",
+        (audit_date.strftime(UTC_FMT), source),
+    )
+    audit_id = cursor.lastrowid
+    folder = audits_dir / f"{stamp}_audit{audit_id}"
+    folder.mkdir(parents=True, exist_ok=False)
+    try:
+        stored = folder.resolve().relative_to(Path(db_path).resolve().parent)
+    except ValueError:
+        stored = folder.resolve()
+    conn.execute("UPDATE Audits SET folder = ? WHERE auditId = ?", (str(stored), audit_id))
+    return audit_id, folder
+
+
+FPING_HEADER_ROW = ["ts", "host", "sent", "recv", "loss_pct", "min_ms", "avg_ms", "max_ms"]
 
 FPING_INSERT = '''INSERT INTO RedeAudit
                (auditId, dateTime, host, sent, recv, loss_pct, min_ms, avg_ms, max_ms)
@@ -320,22 +375,22 @@ def parse_mtr(text):
     return rows
 
 
+def write_fping_csv(path, rows):
+    with open(path, "w", newline="") as out:
+        w = csv.writer(out)
+        w.writerow(FPING_HEADER_ROW)
+        for row in rows:
+            w.writerow(["" if v is None else v for v in row])
+
+
 # ---------------------------------------------------------------- import
 
-def load_csv(conn, audit_id, csv_path):
+def load_csv(csv_path):
     with open(csv_path, mode="r", newline="") as file:
         reader = csv.reader(file)
         next(reader, None)  # skip header
         raw_rows = [r for r in reader if r]
-    rows = [(audit_id, *parse_row(r)) for r in raw_rows]
-    conn.executemany(FPING_INSERT, rows)
-    return len(rows)
-
-
-def load_mtr(conn, audit_id, mtr_path):
-    rows = [(audit_id, *r) for r in parse_mtr(Path(mtr_path).read_text())]
-    conn.executemany(MTR_INSERT, rows)
-    return len(rows)
+    return [parse_row(r) for r in raw_rows]
 
 
 def cmd_import(args):
@@ -346,23 +401,42 @@ def cmd_import(args):
     else:
         fping_csv, mtr_files = src, []
     if not fping_csv.is_file():
-        sys.exit(f"Uso da ferramenta: {Path(sys.argv[0]).name} import <arquivo.csv | run_dir>")
+        die(f"no fping CSV at {fping_csv}", 2)
+
+    try:
+        rows = load_csv(fping_csv)
+        mtr = {f: parse_mtr(f.read_text()) for f in mtr_files}
+    except (OSError, csv.Error, ValueError, IndexError) as e:
+        die(f"Erro ao processar CSV: {e}")
 
     conn = open_db(args.db)
+    folder = None
     try:
         with conn:
-            cur = conn.execute("INSERT INTO Audits (auditDate, source) VALUES (?, ?)",
-                               (now_utc().strftime(UTC_FMT), str(src.resolve())))
-            audit_id = cur.lastrowid
-            n = load_csv(conn, audit_id, fping_csv)
-            m = sum(load_mtr(conn, audit_id, f) for f in mtr_files)
-    except (OSError, csv.Error, ValueError, sqlite3.Error) as e:
-        print(f"Erro ao processar CSV: {e}")
-        sys.exit(1)
+            audit_id, folder = create_audit(conn, now_utc(), str(src.resolve()), args.audits_dir, args.db)
+            conn.executemany(FPING_INSERT, [(audit_id, *r) for r in rows])
+            for mtr_rows in mtr.values():
+                conn.executemany(MTR_INSERT, [(audit_id, *r) for r in mtr_rows])
+            write_fping_csv(folder / "fping.csv", rows)
+            for f in mtr_files:
+                shutil.copy(f, folder / f.name)
+            for name in ("meta.txt", "targets.txt", "mtr_targets.txt"):
+                if src.is_dir() and (src / name).is_file():
+                    shutil.copy(src / name, folder / (f"source_{name}" if name == "meta.txt" else name))
+            with open(folder / "meta.txt", "w") as f:
+                t = now_utc()
+                f.write(f"imported: {t.strftime(UTC_FMT)} ({fmt_dt(t, 'br')} {getattr(BR, 'key', BR)})\n")
+                f.write(f"source: {src.resolve()}\n")
+                f.write("fping.csv rewritten with UTC timestamps; mtr files copied unchanged (epoch timestamps)\n")
+    except (OSError, sqlite3.Error) as e:
+        if folder is not None:
+            shutil.rmtree(folder, ignore_errors=True)
+        die(f"Erro ao processar CSV: {e}")
     finally:
         conn.close()
-    print(f"{n} linhas gravadas para auditId={audit_id}." + (f" ({m} linhas mtr)" if mtr_files else ""))
-    print(f"Audit {audit_id} concluído com sucesso.")
+    m = sum(len(v) for v in mtr.values())
+    print(f"{len(rows)} linhas gravadas para auditId={audit_id}." + (f" ({m} linhas mtr)" if mtr_files else ""))
+    print(f"Audit {audit_id} concluído com sucesso: {folder}")
 
 
 # ---------------------------------------------------------------- migrate
@@ -370,7 +444,7 @@ def cmd_import(args):
 def cmd_migrate(args):
     path = Path(args.db)
     if not path.is_file():
-        sys.exit(f"no database: {path}")
+        die(f"no database: {path}")
     backup = path.with_name(f"{path.name}.bak-{now_utc().strftime('%Y%m%dT%H%M%SZ')}")
     src = sqlite3.connect(path)
     dst = sqlite3.connect(backup)
@@ -387,16 +461,15 @@ def cmd_migrate(args):
                     print(f"{table}.{col}: {n} rows converted to UTC")
     except (ValueError, sqlite3.Error) as e:
         src.close()
-        sys.exit(f"migration failed, database left unchanged: {e}")
+        die(f"migration failed, database left unchanged: {e}")
     left = unsanitized_count(src)
     if left:
         src.close()
-        sys.exit(f"{left} values still not in UTC format")
+        die(f"{left} values still not in UTC format")
     if not create_schema(src):
         sys.exit(1)
-    src.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     src.close()
-    print("ok: all datetimes stored as UTC (YYYY-MM-DDTHH:MM:SSZ)")
+    print(f"ok: all datetimes stored as UTC (YYYY-MM-DDTHH:MM:SSZ), schema version {SCHEMA_VERSION}")
 
 
 # ---------------------------------------------------------------- run
@@ -420,12 +493,12 @@ def default_route():
 def cmd_run(args):
     for c in ("fping", "mtr"):
         if not shutil.which(c):
-            sys.exit(f"missing: {c} (sudo dnf install {c})")
+            die(f"missing: {c} (sudo dnf install {c})")
     targets = Path(args.targets)
     mtr_targets = Path(args.mtr_targets)
-    if not targets.is_file() or targets.stat().st_size == 0:
-        sys.exit(f"no targets file: {targets}")
-    has_mtr = mtr_targets.is_file() and mtr_targets.stat().st_size > 0
+    if not targets.is_file() or not hosts_of(targets):
+        die(f"no targets in {targets} (copy targets.example.txt to {targets} and edit it)")
+    has_mtr = mtr_targets.is_file() and bool(hosts_of(mtr_targets))
 
     if not os.environ.get("NW_INHIBITED") and shutil.which("systemd-inhibit"):
         env = dict(os.environ, NW_INHIBITED="1")
@@ -434,30 +507,30 @@ def cmd_run(args):
             sys.executable, os.path.abspath(__file__), *sys.argv[1:]], env)
 
     start = now_utc()
-    local = start if args.tz == "utc" else start.astimezone(BR)
-    suffix = "Z" if args.tz == "utc" else local.strftime("%z")
-    run_dir = Path(args.dir) / local.strftime("%Y-%m-%d") / f"netwatch-{local.strftime('%H%M')}{suffix}"
-    run_dir.mkdir(parents=True, exist_ok=True)
+    conn = None if args.no_db else open_db(args.db)
+    try:
+        if conn is not None:
+            with conn:
+                audit_id, run_dir = create_audit(conn, start, f"run on {socket.gethostname()}", args.audits_dir, args.db)
+            conn.close()
+        else:
+            audit_id, run_dir = create_audit(None, start, None, args.audits_dir, None)
+    except (OSError, sqlite3.Error) as e:
+        die(f"Erro ao criar audit: {e}")
+
     shutil.copy(targets, run_dir / "targets.txt")
     if has_mtr:
         shutil.copy(mtr_targets, run_dir / "mtr_targets.txt")
     meta = run_dir / "meta.txt"
     with open(meta, "w") as f:
         f.write(f"start: {start.strftime(UTC_FMT)} ({fmt_dt(start, 'br')} {getattr(BR, 'key', BR)})\n")
+        f.write(f"auditId: {audit_id if audit_id is not None else '-'}\n")
         f.write(f"host: {socket.gethostname()}\n")
         f.write(f"route: {default_route()}\n")
         f.write(f"fping: {tool_version('fping')}\n")
         f.write(f"mtr: {tool_version('mtr')}\n")
         f.write(f"fping period {args.fping_period} ms, report every {args.fping_report} s; "
                 f"mtr every {args.mtr_every} s, {args.mtr_count} cycles\n")
-
-    audit_id = None
-    if not args.no_db:
-        conn = open_db(args.db)
-        audit_id = create_audit(conn, start, str(run_dir))
-        conn.close()
-        if audit_id is None:
-            sys.exit(1)
 
     stop = threading.Event()
     procs = []
@@ -476,7 +549,7 @@ def cmd_run(args):
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, bufsize=1))
         with open(run_dir / "fping_raw.log", "a") as raw, open(run_dir / "fping.csv", "w", newline="") as out:
             w = csv.writer(out)
-            w.writerow(["ts", "host", "sent", "recv", "loss_pct", "min_ms", "avg_ms", "max_ms"])
+            w.writerow(FPING_HEADER_ROW)
             out.flush()
             for line in p.stderr:
                 t = now_utc()
@@ -553,7 +626,31 @@ def cmd_run(args):
     end = now_utc()
     with open(meta, "a") as f:
         f.write(f"stop: {end.strftime(UTC_FMT)} ({fmt_dt(end, 'br')} {getattr(BR, 'key', BR)})\n")
-    print(f"stopped; summary: {Path(sys.argv[0]).name} summary {run_dir}")
+    print(f"stopped; summary: {PROG} summary " + (f"-a {audit_id}" if audit_id else str(run_dir)))
+
+
+# ---------------------------------------------------------------- output
+
+def print_table(headers, rows, tz, fmt="table", out=sys.stdout):
+    """Columns named *_utc hold UTC datetimes and are shown in the --tz zone."""
+    times = [h.endswith("_utc") for h in headers]
+    rows = [[("" if v is None else fmt_dt(v, tz) if t and v else v) for v, t in zip(r, times)] for r in rows]
+    if fmt == "csv":
+        w = csv.writer(out)
+        w.writerow([h[:-4] + ("_utc" if tz == "utc" else "_br") if t else h for h, t in zip(headers, times)])
+        w.writerows(rows)
+        return
+    shown = [h[:-4] if t else h for h, t in zip(headers, times)]
+    if any(times):
+        print(f"times in {tz_label(tz)}", file=out)
+    numeric = [bool(rows) and all(isinstance(r[i], (int, float)) or r[i] == "" for r in rows) for i in range(len(headers))]
+    widths = [max([len(shown[i])] + [len(str(r[i])) for r in rows]) for i in range(len(headers))]
+    line = lambda cells: "  ".join((str(c).rjust(w) if n else str(c).ljust(w)) for c, w, n in zip(cells, widths, numeric)).rstrip()
+    print(line(shown), file=out)
+    for r in rows:
+        print(line(r), file=out)
+    if not rows:
+        print("(no rows)", file=out)
 
 
 # ---------------------------------------------------------------- summary
@@ -634,18 +731,14 @@ def cmd_summary(args):
     if args.run_dir:
         d = Path(args.run_dir)
         if not (d / "fping.csv").is_file():
-            sys.exit(f"no fping.csv in {d}")
+            die(f"no fping.csv in {d}", 2)
         print(f"source: {d}")
         print_summary(fping_rows_from_csv(d / "fping.csv"), mtr_rows_from_dir(d), args.tz)
         return
 
-    conn = open_db(args.db)
-    audit = args.audit
-    if audit is None:
-        audit = conn.execute("SELECT max(auditId) FROM Audits").fetchone()[0]
-    info = conn.execute("SELECT auditDate, source FROM Audits WHERE auditId = ?", (audit,)).fetchone()
-    if info is None:
-        sys.exit(f"no audit {audit} in {args.db}")
+    conn = open_db_readonly(args.db)
+    audit = resolve_audit(conn, args.audit or "latest")
+    info = conn.execute("SELECT auditDate, source, folder FROM Audits WHERE auditId = ?", (audit,)).fetchone()
     fping_rows = conn.execute(
         "SELECT dateTime, host, sent, recv, loss_pct, min_ms, avg_ms, max_ms FROM RedeAudit "
         "WHERE auditId = ? ORDER BY dateTime, id", (audit,)).fetchall()
@@ -653,69 +746,248 @@ def cmd_summary(args):
         "SELECT dateTime, target, status, hop, ip, loss_pct, sent, last_ms, avg_ms, best_ms, worst_ms, stdev_ms "
         "FROM MtrAudit WHERE auditId = ? ORDER BY dateTime, id", (audit,)).fetchall()
     conn.close()
-    print(f"audit {audit}: created {fmt_dt(info[0], args.tz)}, source {info[1]}")
+    print(f"audit {audit}: created {fmt_dt(info[0], args.tz)}, source {info[1]}" + (f", folder {info[2]}" if info[2] else ""))
     print_summary(fping_rows, mtr_rows, args.tz)
 
 
 def cmd_audits(args):
-    conn = open_db(args.db)
-    rows = conn.execute(
-        "SELECT a.auditId, a.auditDate, a.source, count(r.id), min(r.dateTime), max(r.dateTime) "
-        "FROM Audits a LEFT JOIN RedeAudit r USING (auditId) GROUP BY a.auditId ORDER BY a.auditId").fetchall()
+    conn = open_db_readonly(args.db)
+    cur = conn.execute(
+        "SELECT a.auditId AS id, a.auditDate AS created_utc, count(r.id) AS rows, "
+        "min(r.dateTime) AS first_utc, max(r.dateTime) AS last_utc, a.folder, a.source "
+        "FROM Audits a LEFT JOIN RedeAudit r USING (auditId) GROUP BY a.auditId ORDER BY a.auditId")
+    print_table([d[0] for d in cur.description], cur.fetchall(), args.tz, args.format)
     conn.close()
-    print(f"times in {tz_label(args.tz)}")
-    print(f"{'id':>4} {'created':<20} {'rows':>7} {'first':<20} {'last':<20} source")
-    for aid, created, source, n, first, last in rows:
-        f = lambda v: fmt_dt(v, args.tz) if v else "-"
-        print(f"{aid:>4} {f(created):<20} {n:>7} {f(first):<20} {f(last):<20} {source}")
+
+
+# ---------------------------------------------------------------- reports
+
+def read_report(path):
+    text = path.read_text()
+    desc, requires = "", []
+    for line in text.splitlines():
+        if not line.startswith("--"):
+            break
+        body = line[2:].strip()
+        if body.startswith("requires:"):
+            requires = body[len("requires:"):].split()
+        elif not desc:
+            desc = body
+    return text, desc, requires
+
+
+def available_reports():
+    return sorted(SQL_DIR.glob("*.sql")) if SQL_DIR.is_dir() else []
+
+
+def cmd_report(args):
+    if not args.name:
+        print(f"reports in {SQL_DIR}:")
+        for p in available_reports():
+            print(f"  {p.stem:<20} {read_report(p)[1]}")
+        print(f"\nrun one with: {PROG} report <name> [options]; see {PROG} report -h")
+        return
+
+    path = Path(args.name)
+    if not (path.suffix == ".sql" and path.is_file()):
+        path = SQL_DIR / f"{args.name}.sql"
+    if not path.is_file():
+        die(f"no report named {args.name!r}; run '{PROG} report' to list them", 2)
+    text, _, requires = read_report(path)
+    if args.show_sql:
+        print(text, end="")
+        return
+
+    params = {"audit": None, "host": args.host, "spike_ms": None, "min_share": None}
+    try:
+        params["since"] = bound(args.since, args.tz)
+        params["until"] = bound(args.until, args.tz, end=True)
+    except ValueError as e:
+        die(str(e), 2)
+    for item in args.param or []:
+        key, sep, value = item.partition("=")
+        if not sep:
+            die(f"--param expects NAME=VALUE, got {item!r}", 2)
+        params[key] = float(value) if re.fullmatch(r"-?\d+(\.\d+)?", value) else value
+    missing = [r for r in requires if params.get(r) is None]
+    if missing:
+        die(f"report {path.stem} needs --{missing[0]}", 2)
+
+    conn = open_db_readonly(args.db)
+    if args.audit:
+        params["audit"] = resolve_audit(conn, args.audit)
+    try:
+        cur = conn.execute(text, params)
+        rows = cur.fetchall()
+    except sqlite3.Error as e:
+        die(f"{path.name}: {e}")
+    finally:
+        conn.close()
+    print_table([d[0] for d in cur.description], rows, args.tz, args.format)
 
 
 # ---------------------------------------------------------------- cli
 
-def main():
-    if hasattr(signal, "SIGPIPE"):
-        signal.signal(signal.SIGPIPE, signal.SIG_DFL)
-    home = Path.home()
-    env = os.environ.get
-    common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--db", default=argparse.SUPPRESS,
-                        help="SQLite database (env NW_DB, default ~/netaudit/DataAudit.db)")
-    common.add_argument("--tz", choices=("utc", "br"), default=argparse.SUPPRESS,
-                        help="display time zone: utc (ISO 8601 Z) or br (dd/mm/aaaa, America/Sao_Paulo); env NW_TZ, default br")
-    p = argparse.ArgumentParser(prog="netaudit", description=__doc__.splitlines()[0], parents=[common])
-    sub = p.add_subparsers(dest="cmd", required=True)
+EPILOG = f"""\
+examples:
+  {PROG} run                                 start monitoring; Ctrl-C stops it
+  {PROG} audits                              list audits
+  {PROG} summary                             summary of the latest audit
+  {PROG} report                              list the SQL reports
+  {PROG} report availability -a latest       one report, one audit
+  {PROG} report latency --since 05/10/2026 --format csv > latency.csv
+  {PROG} import ~/netaudit/2026-10-02/netwatch-1425
+  {PROG} migrate                             convert an older database to UTC
 
-    r = sub.add_parser("run", parents=[common], help="monitor with fping and mtr, writing CSV files and the database")
-    r.add_argument("--targets", default=env("NW_TARGETS", str(home / "netwatch" / "targets.txt")))
-    r.add_argument("--mtr-targets", default=env("NW_MTR_TARGETS", str(home / "netwatch" / "mtr_targets.txt")))
-    r.add_argument("--dir", default=env("NW_DIR", str(home / "netaudit")), help="where run directories are created")
-    r.add_argument("--fping-period", type=int, default=int(env("NW_FPING_PERIOD", "1000")), help="ms between pings")
-    r.add_argument("--fping-report", type=int, default=int(env("NW_FPING_REPORT", "60")), help="s between reports")
-    r.add_argument("--mtr-every", type=int, default=int(env("NW_MTR_EVERY", "900")), help="s between mtr rounds")
-    r.add_argument("--mtr-count", type=int, default=int(env("NW_MTR_COUNT", "60")), help="cycles per mtr round")
-    r.add_argument("--no-db", action="store_true", help="only write CSV files")
+files (in the home folder: --home, env NW_HOME, default the folder of this script):
+  DataAudit.db                 database
+  targets.txt                  fping hosts, one per line, '#' starts a comment
+  mtr_targets.txt              mtr hosts (optional)
+  audits/<UTC start>_audit<N>/ one folder per audit: meta.txt, fping.csv, fping_raw.log, mtr_*.csv
+  {SQL_DIR}/*.sql   reports (always next to the script)
+
+environment:
+  NW_HOME NW_DB NW_TZ NW_TARGETS NW_MTR_TARGETS NW_BR_ZONE
+  NW_FPING_PERIOD NW_FPING_REPORT NW_MTR_EVERY NW_MTR_COUNT
+
+datetimes are stored in UTC; --tz br shows dd/mm/aaaa HH:MM:SS in America/Sao_Paulo,
+--tz utc shows YYYY-MM-DDTHH:MM:SSZ. --since/--until read naive input in the --tz zone.
+
+exit status: 0 success, 1 error, 2 usage error, 130 interrupted
+"""
+
+
+def audit_arg(value):
+    if value == "latest":
+        return value
+    try:
+        n = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("expected an audit id or 'latest'") from None
+    if n < 1:
+        raise argparse.ArgumentTypeError("audit ids start at 1")
+    return n
+
+
+def add_help(parser):
+    parser.add_argument("-h", "--h", "--help", action="help", help="show this help and exit")
+
+
+def build_parser():
+    env = os.environ.get
+    fmt = argparse.RawDescriptionHelpFormatter
+
+    common = argparse.ArgumentParser(add_help=False)
+    g = common.add_argument_group("common options")
+    g.add_argument("--home", metavar="DIR", default=argparse.SUPPRESS,
+                   help="folder for the database, targets and audits (env NW_HOME, default: this script's folder)")
+    g.add_argument("-d", "--db", metavar="FILE", default=argparse.SUPPRESS,
+                   help="SQLite database (env NW_DB, default: HOME/DataAudit.db)")
+    g.add_argument("-t", "--tz", choices=("utc", "br"), default=argparse.SUPPRESS,
+                   help="time zone for output and for naive input (env NW_TZ, default: br)")
+
+    p = argparse.ArgumentParser(prog=PROG, description=__doc__, epilog=EPILOG, formatter_class=fmt, parents=[common], add_help=False)
+    add_help(p)
+    p.add_argument("-V", "--version", action="version", version=f"%(prog)s {VERSION}")
+    sub = p.add_subparsers(dest="cmd", metavar="COMMAND", title="commands")
+    sub.required = True
+    add_parser = sub.add_parser
+
+    def sub_parser(*a, **kw):
+        sp = add_parser(*a, add_help=False, **kw)
+        add_help(sp)
+        return sp
+
+    sub.add_parser = sub_parser
+
+    r = sub.add_parser("run", parents=[common], formatter_class=fmt,
+                       help="monitor with fping and mtr into a new audit",
+                       description="Monitor with fping and mtr until Ctrl-C or SIGTERM. Creates a new audit in the database "
+                                   "and its own folder under HOME/audits/.",
+                       epilog=f"example:\n  {PROG} run --fping-report 30 --mtr-every 600")
+    r.add_argument("--targets", metavar="FILE", default=env("NW_TARGETS"), help="fping hosts (default: HOME/targets.txt)")
+    r.add_argument("--mtr-targets", metavar="FILE", default=env("NW_MTR_TARGETS"), help="mtr hosts (default: HOME/mtr_targets.txt)")
+    r.add_argument("--fping-period", metavar="MS", type=int, default=int(env("NW_FPING_PERIOD", "1000")),
+                   help="ms between pings to one host (default: %(default)s)")
+    r.add_argument("--fping-report", metavar="S", type=int, default=int(env("NW_FPING_REPORT", "60")),
+                   help="s between fping reports, one DB row per host each (default: %(default)s)")
+    r.add_argument("--mtr-every", metavar="S", type=int, default=int(env("NW_MTR_EVERY", "900")),
+                   help="s between the starts of mtr rounds (default: %(default)s)")
+    r.add_argument("--mtr-count", metavar="N", type=int, default=int(env("NW_MTR_COUNT", "60")),
+                   help="cycles per mtr round (default: %(default)s)")
+    r.add_argument("--no-db", action="store_true", help="write only the audit folder, not the database")
     r.set_defaults(func=cmd_run)
 
-    s = sub.add_parser("summary", parents=[common], help="summarise a run directory or an audit in the database")
-    s.add_argument("run_dir", nargs="?")
-    s.add_argument("--audit", type=int, help="audit id (default: latest)")
+    s = sub.add_parser("summary", parents=[common], formatter_class=fmt,
+                       help="per-host and per-hop summary of an audit",
+                       description="Summarise one audit from the database, or any audit/run folder from its CSV files.",
+                       epilog=f"examples:\n  {PROG} summary\n  {PROG} summary -a 2 -t utc\n  {PROG} summary audits/20261006T125713Z_audit3")
+    s.add_argument("run_dir", nargs="?", metavar="FOLDER", help="audit or legacy netwatch folder (reads its CSV files)")
+    s.add_argument("-a", "--audit", type=audit_arg, metavar="ID", help="audit id or 'latest' (default: latest)")
     s.set_defaults(func=cmd_summary)
 
-    i = sub.add_parser("import", parents=[common], help="load a fping CSV or a whole run directory into the database")
-    i.add_argument("source")
+    rp = sub.add_parser("report", parents=[common], formatter_class=fmt,
+                        help="run an SQL report (no name: list them)",
+                        description="Run one of the SQL reports in sql/, or any .sql file with the same parameters. "
+                                    "Reports run read-only. Without a name, lists the reports.",
+                        epilog="parameters available to the SQL: :audit :host :since :until, plus any --param NAME=VALUE\n"
+                               "(latency/correlated_events read :spike_ms, default 500; correlated_events reads :min_share, default 50)\n\n"
+                               f"examples:\n  {PROG} report\n  {PROG} report packet_loss -a latest\n"
+                               f"  {PROG} report host_timeline --host 192.168.1.243 --since '05/10/2026 18:00'\n"
+                               f"  {PROG} report correlated_events -p spike_ms=300 -p min_share=75\n"
+                               f"  {PROG} report latency --show-sql")
+    rp.add_argument("name", nargs="?", help="report name or path to a .sql file")
+    rp.add_argument("-a", "--audit", type=audit_arg, metavar="ID", help="only this audit (id or 'latest'; default: all)")
+    rp.add_argument("--host", help="only this host (mtr_hops: target)")
+    rp.add_argument("-s", "--since", metavar="WHEN", help="from this datetime or date, inclusive")
+    rp.add_argument("-u", "--until", metavar="WHEN", help="up to this datetime, exclusive; a bare date includes that day")
+    rp.add_argument("-p", "--param", action="append", metavar="NAME=VALUE", help="extra SQL parameter (repeatable)")
+    rp.add_argument("-f", "--format", choices=("table", "csv"), default="table", help="output format (default: table)")
+    rp.add_argument("--show-sql", action="store_true", help="print the query instead of running it")
+    rp.set_defaults(func=cmd_report)
+
+    a = sub.add_parser("audits", parents=[common], formatter_class=fmt, help="list audits",
+                       description="List every audit with its period, row count and folder.")
+    a.add_argument("-f", "--format", choices=("table", "csv"), default="table", help="output format (default: table)")
+    a.set_defaults(func=cmd_audits)
+
+    i = sub.add_parser("import", parents=[common], formatter_class=fmt,
+                       help="load a fping CSV or a netwatch folder as a new audit",
+                       description="Load a fping CSV, or a whole netwatch/netaudit folder (fping.csv + mtr_*.csv), into a new "
+                                   "audit. Timestamps are converted to UTC; naive ones are read as America/Sao_Paulo.",
+                       epilog=f"examples:\n  {PROG} import fping.csv\n  {PROG} import ~/netaudit/2026-10-02/netwatch-1425")
+    i.add_argument("source", metavar="CSV_OR_FOLDER")
     i.set_defaults(func=cmd_import)
 
-    sub.add_parser("audits", parents=[common], help="list audits in the database").set_defaults(func=cmd_audits)
-    sub.add_parser("migrate", parents=[common], help="convert every datetime in an existing database to UTC (backs it up first)").set_defaults(func=cmd_migrate)
+    sub.add_parser("migrate", parents=[common], formatter_class=fmt,
+                   help="convert an older database to UTC and the current schema",
+                   description="Back up the database, convert every datetime to UTC (naive values are read as "
+                               "America/Sao_Paulo) and upgrade the schema. Safe to run more than once.").set_defaults(func=cmd_migrate)
+    return p
 
-    args = p.parse_args()
+
+def main(argv=None):
+    if hasattr(signal, "SIGPIPE"):
+        signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+    args = build_parser().parse_args(argv)
+    env = os.environ.get
+    if "home" not in args:
+        args.home = env("NW_HOME", str(TOOL_DIR))
+    home = Path(args.home).expanduser()
     if "db" not in args:
-        args.db = env("NW_DB", str(home / "netaudit" / "DataAudit.db"))
+        args.db = env("NW_DB", str(home / "DataAudit.db"))
     if "tz" not in args:
         args.tz = env("NW_TZ", "br")
-    if args.cmd in ("run", "import") and not args.__dict__.get("no_db"):
-        Path(args.db).parent.mkdir(parents=True, exist_ok=True)
-    args.func(args)
+    if args.tz not in ("utc", "br"):
+        die(f"NW_TZ must be utc or br, not {args.tz!r}", 2)
+    args.audits_dir = home / "audits"
+    if args.cmd == "run":
+        args.targets = args.targets or str(home / "targets.txt")
+        args.mtr_targets = args.mtr_targets or str(home / "mtr_targets.txt")
+    try:
+        args.func(args)
+    except KeyboardInterrupt:
+        sys.exit(130)
 
 
 if __name__ == "__main__":

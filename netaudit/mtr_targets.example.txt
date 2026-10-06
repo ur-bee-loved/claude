@@ -1,0 +1,2 @@
+# mtr targets: traced every --mtr-every seconds
+8.8.8.8

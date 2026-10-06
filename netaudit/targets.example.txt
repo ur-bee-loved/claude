@@ -1,0 +1,4 @@
+# fping targets: one host per line, text after the host is ignored
+192.168.1.1    gateway
+1.1.1.1        cloudflare dns
+8.8.8.8        google dns
