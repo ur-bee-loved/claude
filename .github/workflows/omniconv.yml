@@ -1,9 +1,11 @@
-name: CI
+name: omniconv
 
 on:
   push:
     branches: [main]
+    paths: ["omniconv/**", ".github/workflows/omniconv.yml"]
   pull_request:
+    paths: ["omniconv/**", ".github/workflows/omniconv.yml"]
 
 # A run for an older commit on the same branch tells nobody anything once a
 # newer one exists, and the Windows job holds a runner for a quarter of an
@@ -11,6 +13,10 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: omniconv
 
 jobs:
   linux:
@@ -44,7 +50,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: screenshots-linux
-          path: screenshots/
+          path: omniconv/screenshots/
           if-no-files-found: error
 
   linux-gtk:
@@ -83,7 +89,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: screenshots-gtk
-          path: screenshots/
+          path: omniconv/screenshots/
           if-no-files-found: error
       - name: Print a screenshot into the log
         if: always()
@@ -193,7 +199,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: screenshots-windows
-          path: screenshots/
+          path: omniconv/screenshots/
           if-no-files-found: error
       - name: Measure the layout with the real Windows fonts
         shell: pwsh
@@ -314,7 +320,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Omniconv-windows
-          path: dist/Omniconv/
+          path: omniconv/dist/Omniconv/
           if-no-files-found: error
       - name: Build the installer (Inno Setup)
         shell: pwsh
@@ -330,7 +336,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Omniconv-windows-installer
-          path: dist/Omniconv-Setup.exe
+          path: omniconv/dist/Omniconv-Setup.exe
           if-no-files-found: error
       - name: Install, verify and uninstall silently
         shell: pwsh

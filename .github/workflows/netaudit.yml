@@ -1,0 +1,39 @@
+name: netaudit
+
+on:
+  push:
+    branches: [main]
+    paths: ["netaudit/**", ".github/workflows/netaudit.yml"]
+  pull_request:
+    paths: ["netaudit/**", ".github/workflows/netaudit.yml"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: netaudit
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install fping, mtr and the test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fping mtr-tiny
+          python -m pip install pytest "ruff==0.16.10"
+      - name: Lint
+        run: python -m ruff check --isolated netaudit.py tests
+      - name: Tests
+        run: python -m pytest -q tests
