@@ -1,0 +1,236 @@
+{
+  "version": 1,
+  "revision": 0,
+  "site": "Example office",
+  "states": [
+    {
+      "id": "full_chain",
+      "label": "Cadeia completa funcional",
+      "color": "#3d8bff",
+      "pattern": "solid"
+    },
+    {
+      "id": "link_activity",
+      "label": "Link E atividade",
+      "color": "#2bff88",
+      "pattern": "solid"
+    },
+    {
+      "id": "link_only",
+      "label": "Apenas link",
+      "color": "#ffb000",
+      "pattern": "solid"
+    },
+    {
+      "id": "available",
+      "label": "Disponível",
+      "color": "#8a96ab",
+      "pattern": "dashed"
+    },
+    {
+      "id": "damaged",
+      "label": "Danificado",
+      "color": "#ff3355",
+      "pattern": "solid"
+    },
+    {
+      "id": "vital",
+      "label": "Infra vital",
+      "color": "#ff2bd6",
+      "pattern": "solid"
+    },
+    {
+      "id": "gateway",
+      "label": "Link Gateway",
+      "color": "#e8eef8",
+      "pattern": "solid"
+    },
+    {
+      "id": "unidentified",
+      "label": "Não identificado",
+      "color": "#31d7e8",
+      "pattern": "hatched"
+    }
+  ],
+  "devices": [
+    {
+      "id": "router",
+      "type": "router",
+      "name": "Edge router",
+      "ports": 5,
+      "note": "Made-up example data",
+      "port_data": {
+        "1": {
+          "state": "gateway",
+          "name": "WAN",
+          "connected": "Gateway",
+          "critical": true
+        },
+        "2": {
+          "state": "full_chain",
+          "name": "Core uplink",
+          "connected": "Switch",
+          "ip": "192.0.2.1",
+          "mac": "02:00:00:00:00:01",
+          "critical": true,
+          "link": {
+            "device": "core",
+            "port": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "core",
+      "type": "switch",
+      "name": "Core switch",
+      "ports": 24,
+      "port_data": {
+        "1": {
+          "state": "full_chain",
+          "name": "Router uplink",
+          "connected": "Router",
+          "critical": true,
+          "link": {
+            "device": "router",
+            "port": 2
+          }
+        },
+        "3": {
+          "state": "link_activity",
+          "name": "Reception AP",
+          "connected": "Access point",
+          "ip": "192.0.2.20",
+          "mac": "02:00:00:00:00:20",
+          "patch": "R1 PP1 T03",
+          "critical": true
+        },
+        "4": {
+          "state": "link_activity",
+          "name": "Desk 1A",
+          "connected": "Workstation",
+          "ip": "192.0.2.101",
+          "mac": "02:00:00:00:01:01",
+          "patch": "R1 PP2 T01"
+        },
+        "5": {
+          "state": "link_only",
+          "name": "Desk 1B",
+          "connected": "Workstation",
+          "patch": "R1 PP2 T02"
+        },
+        "6": {
+          "state": "damaged",
+          "name": "Desk 2A",
+          "patch": "R1 PP2 T05",
+          "note": "Connector broken at the desk."
+        },
+        "8": {
+          "state": "vital",
+          "name": "Office printer",
+          "connected": "Printer",
+          "ip": "192.0.2.50",
+          "mac": "02:00:00:00:00:50",
+          "patch": "R1 PP1 T10",
+          "critical": true
+        },
+        "9": {
+          "state": "unidentified",
+          "patch": "R1 PP3 T07",
+          "note": "Link light on, device unknown."
+        },
+        "12": {
+          "state": "link_activity",
+          "name": "Meeting room",
+          "connected": "Room outlet",
+          "ip": "192.0.2.60",
+          "patch": "R1 PP1 T12"
+        }
+      }
+    }
+  ],
+  "racks": [
+    {
+      "id": "R1",
+      "name": "Rack 1",
+      "panels": 4,
+      "ports_per_panel": 24,
+      "cells": {
+        "PP1 T03": {
+          "state": "full_chain"
+        },
+        "PP1 T10": {
+          "state": "vital"
+        },
+        "PP1 T12": {
+          "state": "full_chain"
+        },
+        "PP2 T01": {
+          "state": "full_chain"
+        },
+        "PP2 T02": {
+          "state": "link_only"
+        },
+        "PP2 T05": {
+          "state": "damaged"
+        },
+        "PP3 T07": {
+          "state": "unidentified"
+        },
+        "PP4 T20": {
+          "state": "damaged",
+          "note": "Bent pins."
+        }
+      }
+    }
+  ],
+  "endpoints": [
+    {
+      "patch": "R1 PP1 T03",
+      "setor": "Reception",
+      "referencia": "Ponto Wifi",
+      "cabling": "Íntegra",
+      "jack": "Endpoint"
+    },
+    {
+      "patch": "R1 PP2 T01",
+      "setor": "Sales",
+      "referencia": "Mesa 1",
+      "baia": "1",
+      "letra": "A",
+      "cabling": "Íntegra",
+      "jack": "Endpoint 1"
+    },
+    {
+      "patch": "R1 PP2 T02",
+      "setor": "Sales",
+      "referencia": "Mesa 1",
+      "baia": "1",
+      "letra": "B",
+      "cabling": "Íntegra",
+      "jack": "Endpoint 1"
+    },
+    {
+      "patch": "R1 PP2 T05",
+      "setor": "Sales",
+      "referencia": "Mesa 1",
+      "baia": "2",
+      "letra": "A",
+      "cabling": "Parcialmente danificada",
+      "jack": "Endpoint 1"
+    },
+    {
+      "patch": "R1 PP1 T10",
+      "setor": "Office",
+      "referencia": "Impressora",
+      "cabling": "Íntegra",
+      "jack": "Endpoint"
+    },
+    {
+      "patch": "R1 PP1 T12",
+      "referencia": "Meeting room",
+      "cabling": "Íntegra",
+      "jack": "Endpoint 1"
+    }
+  ]
+}
