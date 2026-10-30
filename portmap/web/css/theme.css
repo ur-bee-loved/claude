@@ -1,0 +1,34 @@
+/* Design tokens. Port-state colors are not here: they come from "states" in
+   the data file, so they can be changed without touching CSS. */
+:root {
+  color-scheme: dark;
+
+  --bg: #06070b;
+  --bg-2: #0a0c13;
+  --panel: #0d1018;
+  --panel-2: #121725;
+  --panel-3: #19202f;
+  --line: #1f2737;
+  --line-2: #2c3750;
+
+  --text: #dde7f5;
+  --text-dim: #8d99b0;
+  --text-faint: #58637a;
+
+  --yellow: #fcee0a;
+  --yellow-soft: rgb(252 238 10 / 0.14);
+  --cyan: #00f0ff;
+  --cyan-soft: rgb(0 240 255 / 0.12);
+  --red: #ff3355;
+  --green: #2bff88;
+  --amber: #ffb000;
+
+  --font-ui: "Rajdhani", "Bahnschrift", "Barlow Semi Condensed", "Roboto Condensed", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  --chamfer: 14px;
+  --chamfer-sm: 8px;
+  --topbar-h: 58px;
+  --drawer-w: min(480px, 100vw);
+  --ease: cubic-bezier(.2, .8, .2, 1);
+}

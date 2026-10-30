@@ -8,6 +8,7 @@ nothing is shared between them.
 |---|---|---|
 | [omniconv](omniconv/) | Desktop file converter for Linux and Windows (GTK 4 / Qt 6 window and a command line) that drives ffmpeg, ImageMagick, LibreOffice, pandoc and other installed tools | [omniconv/README.md](omniconv/README.md) |
 | [netaudit](netaudit/) | Network monitoring with fping and mtr, stored in SQLite with UTC timestamps, plus SQL reports on loss, latency, availability and outages | [netaudit/README.md](netaudit/README.md) |
+| [portmap](portmap/) | Browser map of switch ports, patch panels and desks (IP, MAC, name, state per port), served and saved by a small Python server, with an importer for the infrastructure spreadsheet | [portmap/README.md](portmap/README.md) |
 
 ## Layout
 
@@ -15,8 +16,10 @@ nothing is shared between them.
 .github/workflows/
   omniconv.yml     runs only when omniconv/ or this file changes
   netaudit.yml     runs only when netaudit/ or this file changes
+  portmap.yml      runs only when portmap/ or this file changes
 omniconv/          pyproject.toml, Makefile, package, scripts, packaging, tests
 netaudit/          netaudit.py, sql/, tests
+portmap/           server.py, import_xlsx.py, web/, data/, tests
 ```
 
 Work inside an app's folder; every command in its README assumes that
@@ -24,7 +27,7 @@ folder is the current directory:
 
 ```sh
 git clone https://github.com/ur-bee-loved/claude
-cd claude/omniconv     # or claude/netaudit
+cd claude/omniconv     # or claude/netaudit, claude/portmap
 ```
 
 ## Adding an app
