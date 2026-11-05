@@ -22,22 +22,35 @@ names, IPs and MACs, and the repository is public.
 
 ## Using it
 
-- **Devices** view: one panel per switch or router. The front panel drawing
-  shows every port (odd on top, even below), and the boxes under it hold the
-  details. Click either one to edit.
-- **Racks** view: each rack as patch panels (`PP1`…) by ports (`T01`…). A
-  yellow dot marks a position with a desk recorded; a cyan top edge marks a
-  position that a device port points to.
+- **Devices** view: one panel per switch, router or modem. Click a panel's
+  header to fold it to one line (name, port counts and a state bar), or use
+  **Expand all / Collapse all**. The browser remembers which panels you left
+  open; the first panel starts open the very first time.
+- Inside a panel, the front-panel drawing shows every port (odd on top, even
+  below; a yellow corner marks a critical port). Hover a port, or reach it
+  with Tab, to see a summary card: name, connected device, IP, MAC, patch
+  position, desk and note. Click it to edit.
+- **Show port list** under the drawing opens the full boxes for that device,
+  with every field visible at once.
+- **Racks** view: the same folding panels, each rack drawn as patch panels
+  (`PP1`…) by ports (`T01`…). A yellow dot marks a position with a desk
+  recorded; a cyan top edge marks a position that a device port points to.
+  Hovering a position shows its desks and wired ports.
 - The legend chips filter by state; `/` focuses the search box, which matches
-  names, IPs, MACs, patch references and desk fields.
+  names, IPs, MACs, patch references and desk fields. While searching, panels
+  with matches open by themselves and the others are dimmed.
 - In the port editor, **Patch panel** takes the spreadsheet's notation
   (`R1 PP8 T05`) and the connection chain under it shows the patch state and
   the desk. **Linked to device** connects two of your own devices (uplinks)
-  and updates both ends.
+  and updates both ends. Links in the chain jump to the other end and unfold
+  its panel.
 - IPv4 and MAC addresses are validated; MACs are stored as `AA:BB:CC:DD:EE:FF`.
-  A port whose IP or MAC is used by another port shows a warning.
+  A port whose IP or MAC is used by another port shows a warning in its box.
 - **Export** downloads the current data as JSON; **Import** replaces it with a
   JSON file (the server keeps a backup).
+
+Which panels are open is kept in the browser (`localStorage`), not in the
+data file, so each person viewing the page keeps their own layout.
 
 ## Server
 
@@ -131,10 +144,12 @@ web/css/app.css      layout and components
 web/js/main.js       views, routing, header, keyboard shortcuts
 web/js/model.js      data functions without DOM access (tested with node --test)
 web/js/store.js      current document, change notifications, autosave
+web/js/prefs.js      per-browser view preferences (open panels)
 web/js/api.js        load/save requests
 web/js/deviceTypes.js
 web/js/views/        devicesView.js, racksView.js
-web/js/components/   port card, faceplate, legend, editors, dialogs, drawer/toasts
+web/js/components/   folding panel, faceplate, hover card, port box, legend, editors,
+                     dialogs, drawer/toasts
 tests/               pytest for server.py and import_xlsx.py
 web/tests/           node --test for model.js
 ```

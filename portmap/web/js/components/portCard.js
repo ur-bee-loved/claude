@@ -64,3 +64,33 @@ export function portCard(doc, device, n, { dupes, onOpen }) {
   trail.length > 0 && h('div', { class: 'pc-trails' }, trail));
   return card;
 }
+
+// Short read-only summary for the hover card: only the fields that are set.
+export function portSummary(doc, device, n) {
+  const chain = chainFor(doc, device.id, n);
+  const port = chain.port;
+  const state = stateOf(doc, port.state);
+  const rows = Object.entries(META_LABELS).filter(([k]) => port[k]).map(([k, label]) =>
+    h('div', { class: 'hc-row' }, h('span', { class: 'hc-key' }, label), h('span', { class: 'mono' }, port[k])));
+  const trail = [];
+  if (chain.link) trail.push(h('div', { class: 'hc-trail link' }, icon(ICONS.link, 13), `${chain.link.device.name} · ${pad(chain.link.port)}`));
+  for (const e of chain.endpoints) trail.push(h('div', { class: 'hc-trail' }, icon(ICONS.arrow, 13), endpointLabel(e)));
+  if (chain.cell && chain.cell.state !== 'available') {
+    const cs = stateOf(doc, chain.cell.state);
+    trail.push(h('div', { class: 'hc-trail', style: { '--state': cs.color } }, h('span', { class: 'dot' }), `Patch: ${cs.label}`));
+  }
+  return {
+    accent: state.color,
+    content: h('div', {},
+      h('div', { class: 'hc-head' },
+        h('span', { class: 'hc-num' }, pad(n)),
+        port.critical && h('span', { class: 'pc-crit', title: 'Critical' }, icon(ICONS.star, 13)),
+        h('span', { class: 'tag', style: { '--state': state.color } }, state.label)),
+      h('div', { class: `hc-name${port.name ? '' : ' nil'}` }, port.name || 'Unassigned'),
+      port.connected && h('div', { class: 'hc-sub' }, port.connected),
+      rows.length > 0 && h('div', { class: 'hc-rows' }, rows),
+      trail.length > 0 && h('div', { class: 'hc-trails' }, trail),
+      port.note && h('div', { class: 'hc-note' }, port.note),
+      h('div', { class: 'hc-hint' }, 'Click to edit')),
+  };
+}

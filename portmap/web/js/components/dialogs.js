@@ -1,7 +1,7 @@
 import { h } from '../dom.js';
 import { DEVICE_TYPES } from '../deviceTypes.js';
 import { findDevice, findRack, portsAbove, removeDevice, setLink, slugId } from '../model.js';
-import { store, mutate } from '../store.js';
+import { store, mutate, setExpanded } from '../store.js';
 import { openDialog, confirmDialog, toast } from './overlay.js';
 import { textField, selectField } from './fields.js';
 
@@ -52,10 +52,11 @@ export function deviceDialog(deviceId) {
       });
       toast(`${n} updated`, { kind: 'ok', timeout: 2000 });
     } else {
+      const id = slugId(n, new Set(store.doc.devices.map((d) => d.id)));
       mutate((doc) => {
-        const id = slugId(n, new Set(doc.devices.map((d) => d.id)));
         doc.devices.push({ id, type: type.input.value, name: n, ports: count, note: note.input.value.trim() || undefined, port_data: {} });
       });
+      setExpanded([`device:${id}`], true);
       toast(`${n} added`, { kind: 'ok', timeout: 2000 });
     }
     return true;
@@ -118,6 +119,7 @@ export function rackDialog(rackId) {
       });
     } else {
       mutate((doc) => doc.racks.push({ id: code, name: n, panels: p, ports_per_panel: pp, cells: {} }));
+      setExpanded([`rack:${code}`], true);
     }
     toast(`${n} saved`, { kind: 'ok', timeout: 2000 });
     return true;
