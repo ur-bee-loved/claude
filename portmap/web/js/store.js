@@ -1,4 +1,5 @@
 import { saveNetwork, ConflictError } from './api.js';
+import { loadPrefs, savePrefs } from './prefs.js';
 
 // Single source of truth for the page. Views read `store.doc` / `store.ui`,
 // change data only through `mutate()`, and re-render when notified.
@@ -6,6 +7,7 @@ import { saveNetwork, ConflictError } from './api.js';
 const SAVE_DELAY_MS = 400;
 
 const listeners = new Set();
+const prefs = loadPrefs();
 let saveTimer = null;
 let saving = false;
 let pending = false;
@@ -17,6 +19,8 @@ export const store = {
     view: 'devices',
     query: '',
     hiddenStates: new Set(),
+    expanded: prefs.expanded ?? {},
+    portList: prefs.portList ?? {},
     saveStatus: 'saved',
     saveError: '',
   },
@@ -40,6 +44,25 @@ export function init(doc, source) {
 export function setUi(patch) {
   Object.assign(store.ui, patch);
   notify('ui');
+}
+
+// Panels are keyed 'device:<id>' or 'rack:<id>'. Without a saved choice only
+// the first panel of a view starts open.
+export function isExpanded(key, index) {
+  return store.ui.expanded[key] ?? index === 0;
+}
+
+export function setExpanded(keys, value) {
+  const expanded = { ...store.ui.expanded };
+  for (const k of keys) expanded[k] = value;
+  setUi({ expanded });
+  savePrefs({ expanded, portList: store.ui.portList });
+}
+
+export function togglePortList(deviceId) {
+  const portList = { ...store.ui.portList, [deviceId]: !store.ui.portList[deviceId] };
+  setUi({ portList });
+  savePrefs({ expanded: store.ui.expanded, portList });
 }
 
 export function toggleHiddenState(id) {

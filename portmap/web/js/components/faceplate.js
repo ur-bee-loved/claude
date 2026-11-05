@@ -1,12 +1,14 @@
 import { h } from '../dom.js';
 import { getPort, stateOf } from '../model.js';
 import { deviceType } from '../deviceTypes.js';
-import { pad } from './portCard.js';
+import { pad, portSummary } from './portCard.js';
+import { hoverable } from './hoverCard.js';
 
 const GROUP = 6;
 
-// Compact front-panel drawing of a device. Each port is a button that opens
-// the same editor as its card; hovering highlights the matching card.
+// Front-panel drawing of a device. Each port is a button: hovering or focusing
+// it shows a summary card, clicking opens the editor. Hovering also highlights
+// the matching box when the port list is open.
 export function faceplate(doc, device, { isMatch, onOpen }) {
   const layout = deviceType(device.type).layout;
   const rows = layout === 'odd-even' && device.ports > 1 ? 2 : 1;
@@ -15,16 +17,18 @@ export function faceplate(doc, device, { isMatch, onOpen }) {
   const jack = (n) => {
     const port = getPort(device, n);
     const state = stateOf(doc, port.state);
-    return h('button', {
+    const el = h('button', {
       type: 'button',
-      class: `jack${isMatch(n) ? '' : ' dim'}`,
-      title: `${pad(n)} · ${state.label}${port.name ? ` · ${port.name}` : ''}`,
+      class: `jack${isMatch(n) ? '' : ' dim'}${port.critical ? ' critical' : ''}`,
+      'aria-label': `Port ${n}, ${state.label}${port.name ? `, ${port.name}` : ''}`,
       dataset: { device: device.id, port: String(n), pattern: state.pattern ?? 'solid', row: rows === 2 ? (n % 2 ? 'top' : 'bottom') : 'top' },
       style: { '--state': state.color },
       onclick: () => onOpen(device.id, n),
       onmouseenter: () => highlight(device.id, n, true),
       onmouseleave: () => highlight(device.id, n, false),
     }, h('span', { class: 'jack-num' }, pad(n)));
+    hoverable(el, () => portSummary(doc, device, n));
+    return el;
   };
 
   const groups = [];

@@ -1,9 +1,10 @@
 import { h, clear, icon, ICONS } from './dom.js';
 import { loadNetwork } from './api.js';
-import { store, init, subscribe, setUi, replaceDoc, flush } from './store.js';
+import { store, init, subscribe, setUi, setExpanded, replaceDoc, flush } from './store.js';
 import { nav } from './nav.js';
 import { closeDrawer, isDrawerOpen, confirmDialog, toast } from './components/overlay.js';
 import { openPortEditor } from './components/portEditor.js';
+import { hide as hideHoverCard } from './components/hoverCard.js';
 import { openCellEditor } from './components/cellEditor.js';
 import { devicesView } from './views/devicesView.js';
 import { racksView } from './views/racksView.js';
@@ -90,8 +91,8 @@ async function importJson(file) {
   toast(`Imported ${file.name}`, { kind: 'ok' });
 }
 
-function flashCard(deviceId, n) {
-  const el = document.querySelector(`.port-card[data-device="${CSS.escape(deviceId)}"][data-port="${n}"]`);
+function flashPort(deviceId, n) {
+  const el = document.querySelector(`.jack[data-device="${CSS.escape(deviceId)}"][data-port="${n}"]`);
   if (!el) return;
   el.scrollIntoView({ block: 'center', behavior: 'smooth' });
   el.classList.add('flash');
@@ -107,13 +108,15 @@ function wireNav() {
   };
   nav.openPort = (deviceId, n) => {
     nav.setView('devices');
+    if (!store.ui.expanded[`device:${deviceId}`]) setExpanded([`device:${deviceId}`], true);
     requestAnimationFrame(() => {
-      if (!store.ui.hiddenStates.size && !store.ui.query) flashCard(deviceId, n);
+      flashPort(deviceId, n);
       openPortEditor(deviceId, n);
     });
   };
   nav.openCell = (rackId, panel, port) => {
     nav.setView('racks');
+    if (!store.ui.expanded[`rack:${rackId}`]) setExpanded([`rack:${rackId}`], true);
     requestAnimationFrame(() => openCellEditor(rackId, panel, port));
   };
 }
@@ -160,6 +163,7 @@ async function main() {
   wireHeader();
   subscribe((kind) => {
     if (kind === 'status') return renderStatus();
+    hideHoverCard();
     renderTabs();
     renderView();
     renderBanner();
