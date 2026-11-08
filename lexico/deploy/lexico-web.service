@@ -1,0 +1,18 @@
+[Unit]
+Description=lexico web page
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/lexico
+Environment=LEXICO_DB=/home/pi/lexico/lexico.db
+ExecStart=/usr/bin/python3 -m lexico serve --host 0.0.0.0 --port 8080
+Restart=on-failure
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
