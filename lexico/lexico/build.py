@@ -3,6 +3,7 @@ from __future__ import annotations
 import gzip
 import io
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -10,7 +11,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .text import LANGS, key, tags_str
+from .text import LANGS, SCHEMA_VERSION, key, tags_str
 
 SCHEMA = Path(__file__).with_name("schema.sql")
 
@@ -34,6 +35,7 @@ PT_RELATIONAL = re.compile(
     re.IGNORECASE,
 )
 PROPER_NEXT = re.compile(r"\s+(?:d[aeo]s?\s+)?[A-ZÀ-Ý]")
+GENERIC_HEADS = {"type", "kind", "sort", "variety"}
 SYLLABLE_SEP = re.compile(r"[‧·.]")
 EN_RELATIONAL = re.compile(
     r"(?:^|\()\s*(?:of,?\s+(?:or\s+)?)?(?:relating|pertaining|belonging|concerning)\s+to"
@@ -389,7 +391,7 @@ class Builder:
             if not m or m.group(1)[:1].isupper() or PROPER_NEXT.match(g, m.end()):
                 continue
             noun = key(m.group(1))
-            if noun in seen:
+            if noun in seen or noun in GENERIC_HEADS:
                 continue
             seen.add(noun)
             self.db.execute(
@@ -424,17 +426,24 @@ class Builder:
         return stats
 
     def load_pt(self, path: str):
-        stats = {"lines": 0, "bad_json": 0, "merged": 0, "new": 0}
+        stats = {"lines": 0, "bad_json": 0, "merged": 0, "new": 0, "kept_apart": 0}
         for rec in records(path, stats):
             ety = " ".join(rec.get("etymology_texts") or []) or None
             if ety:
                 ety = PT_SUPERSCRIPT.sub("", ety).lstrip(": ").strip() or None
-            row = self.db.execute(
-                "SELECT id, syllables, etymology_pt FROM entry WHERE lang=? AND word=? AND pos=? ORDER BY etym_no LIMIT 1",
+            rows = self.db.execute(
+                "SELECT id, syllables, etymology_pt, source FROM entry WHERE lang=? AND word=? AND pos=?"
+                " ORDER BY etym_no, id",
                 (rec["lang_code"], rec["word"], rec["pos"]),
-            ).fetchone()
-            if row:
-                eid, syl, old_ety = row
+            ).fetchall()
+            en_rows = [r for r in rows if r[3] == "en"]
+            if len(en_rows) > 1:
+                stats["kept_apart"] += 1
+                rows = [r for r in rows if r[3] == "pt"]
+            elif en_rows:
+                rows = en_rows
+            if rows:
+                eid, syl, old_ety, _ = rows[0]
                 stats["merged"] += 1
                 updates = {}
                 if not syl and syllables_of(rec):
@@ -448,6 +457,9 @@ class Builder:
                 eid = self.new_entry(rec, "pt", None, ety)
                 stats["new"] += 1
                 start = 0
+                shared = {r[1] for r in en_rows}
+                if len(shared) == 1 and None not in shared and not syllables_of(rec):
+                    self.db.execute("UPDATE entry SET syllables=? WHERE id=?", (shared.pop(), eid))
             self.add_senses(eid, rec, "pt", start)
             self.add_relations(eid, rec, "pt")
             self.add_affix(rec, "pt", "pt.wiktionary")
@@ -457,7 +469,7 @@ class Builder:
 
     def load_adjetivos(self, path: str) -> int:
         n = 0
-        for cells in markdown_rows(path):
+        for cells in markdown_rows(path, second_column="Adjetivo"):
             if len(cells) < 2:
                 continue
             note = " ".join(c for c in cells[2:] if c) or None
@@ -489,13 +501,23 @@ class Builder:
         self.sources.append(f"user:{Path(path).name}")
         return n
 
-    def finish(self):
+    def abort(self, path: Path):
+        try:
+            self.db.close()
+        except sqlite3.Error:
+            pass
+        path.unlink(missing_ok=True)
+
+    def finish(self, fetched_at: str | None = None):
         counts = {t: self.db.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in ("entry", "sense", "morpheme", "affix", "adjective_of")}
         meta = {
+            "schema_version": str(SCHEMA_VERSION),
             "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "sources": "; ".join(self.sources),
             "counts": json.dumps(counts),
         }
+        if fetched_at:
+            meta["fetched_at"] = fetched_at
         self.db.executemany("INSERT INTO meta VALUES (?,?)", meta.items())
         self.db.execute("COMMIT")
         self.db.execute("ANALYZE")
@@ -504,18 +526,22 @@ class Builder:
         return counts
 
 
-def markdown_rows(path: str):
-    header_seen = False
+def markdown_rows(path: str, second_column: str | None = None):
+    header, header_seen = None, False
     for line in Path(path).read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line.startswith("|"):
-            header_seen = False
+            header, header_seen = None, False
             continue
         cells = [c.strip() for c in line.strip("|").split("|")]
         if all(set(c) <= set("-: ") for c in cells):
             header_seen = True
             continue
-        if header_seen:
+        if header is None:
+            header = cells
+            continue
+        wanted = second_column is None or (len(header) > 1 and header[1].lower() == second_column.lower())
+        if header_seen and wanted:
             yield cells
 
 
@@ -526,19 +552,25 @@ def discover(data_dir: Path) -> tuple[list[str], list[str]]:
 
 
 def run(out: Path, en: list[str], pt: list[str], adjetivos: str | None, radicais: str | None,
-        all_forms: bool = False) -> dict:
+        all_forms: bool = False, fetched_at: str | None = None) -> dict:
     t0 = time.time()
-    b = Builder(out, all_forms)
-    for path in en:
-        print(f"en.wiktionary {path}", file=sys.stderr)
-        print(f"  {b.load_en(path)}", file=sys.stderr)
-    for path in pt:
-        print(f"pt.wiktionary {path}", file=sys.stderr)
-        print(f"  {b.load_pt(path)}", file=sys.stderr)
-    if adjetivos:
-        print(f"adjetivos-eruditos: {b.load_adjetivos(adjetivos)} rows", file=sys.stderr)
-    if radicais:
-        print(f"radicais: {b.load_radicais(radicais)} rows", file=sys.stderr)
-    counts = b.finish()
+    part = out.with_name(out.name + ".part")
+    b = Builder(part, all_forms)
+    try:
+        for path in en:
+            print(f"en.wiktionary {path}", file=sys.stderr)
+            print(f"  {b.load_en(path)}", file=sys.stderr)
+        for path in pt:
+            print(f"pt.wiktionary {path}", file=sys.stderr)
+            print(f"  {b.load_pt(path)}", file=sys.stderr)
+        if adjetivos:
+            print(f"adjetivos-eruditos: {b.load_adjetivos(adjetivos)} rows", file=sys.stderr)
+        if radicais:
+            print(f"radicais: {b.load_radicais(radicais)} rows", file=sys.stderr)
+        counts = b.finish(fetched_at)
+    except BaseException:
+        b.abort(part)
+        raise
+    os.replace(part, out)
     print(f"done in {time.time() - t0:.0f}s: {counts}", file=sys.stderr)
     return counts

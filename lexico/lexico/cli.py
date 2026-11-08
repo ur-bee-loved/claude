@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -54,18 +55,26 @@ def main(argv=None) -> int:
     if args.cmd == "build":
         from . import build
         en, pt = list(args.en), list(args.pt)
+        fetched_at = None
         if args.data_dir:
             found_en, found_pt = build.discover(args.data_dir)
             en += found_en
             pt += found_pt
+            stamp = args.data_dir / "fetched_at"
+            if stamp.is_file():
+                text = stamp.read_text(encoding="utf-8").strip()
+                if re.fullmatch(r"\d{4}-\d{2}-\d{2}T[\d:]+Z", text):
+                    fetched_at = text
+                else:
+                    print(f"ignoring {stamp}: not a timestamp", file=sys.stderr)
         if not en and not pt:
             p.error("no input: give a data folder or --en/--pt files")
-        build.run(args.out, en, pt, args.adjetivos, args.radicais, args.all_forms)
+        build.run(args.out, en, pt, args.adjetivos, args.radicais, args.all_forms, fetched_at)
         return 0
 
     try:
         db = query.connect(args.db)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, query.SchemaMismatch) as exc:
         print(exc, file=sys.stderr)
         return 1
 

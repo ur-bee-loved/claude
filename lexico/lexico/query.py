@@ -4,9 +4,13 @@ import re
 import sqlite3
 from pathlib import Path
 
-from .text import key
+from .text import SCHEMA_VERSION, key
 
 POS_ORDER = "CASE pos WHEN 'noun' THEN 0 WHEN 'adj' THEN 1 WHEN 'verb' THEN 2 WHEN 'adv' THEN 3 ELSE 4 END"
+
+
+class SchemaMismatch(RuntimeError):
+    pass
 
 
 def connect(path: str | Path) -> sqlite3.Connection:
@@ -15,6 +19,16 @@ def connect(path: str | Path) -> sqlite3.Connection:
         raise FileNotFoundError(f"database not found: {p}")
     db = sqlite3.connect(f"file:{p.resolve()}?mode=ro", uri=True, check_same_thread=False)
     db.row_factory = sqlite3.Row
+    try:
+        found = meta(db).get("schema_version")
+    except sqlite3.Error:
+        found = None
+    if found != str(SCHEMA_VERSION):
+        db.close()
+        raise SchemaMismatch(
+            f"database schema is {found or 'unversioned'}, this code needs {SCHEMA_VERSION}: "
+            "rebuild it with 'python -m lexico build'"
+        )
     return db
 
 

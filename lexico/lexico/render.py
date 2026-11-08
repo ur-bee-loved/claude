@@ -57,8 +57,9 @@ def marks(tags: str) -> str:
 
 
 def source_line(db, used: list[str]) -> str:
-    built = query.meta(db).get("built_at", "?")[:10]
-    return f"Fonte: {'; '.join(dict.fromkeys(used))} (via kaikki.org, base de {built})"
+    meta = query.meta(db)
+    dated = (meta.get("fetched_at") or meta.get("built_at", "?"))[:10]
+    return f"Fonte: {'; '.join(dict.fromkeys(used))} (via kaikki.org, base de {dated})"
 
 
 def lemma_of(db, word: str, lang: str):
@@ -252,7 +253,8 @@ def other_forms(db, word: str, lang: str | None = None) -> str:
         lines.insert(0, f'"{word}" é forma flexionada de "{entry["word"]}".')
     rows = query.forms(db, entry["id"])
     infl = _pick_inflections(entry, rows, lang)
-    lines.append(f"Flexões: {', '.join([entry['word']] + [x for x in infl if not x.startswith(entry['word'] + ' (inf')])}")
+    shown = [x for x in infl if x != entry["word"] and not x.startswith(entry["word"] + " (inf")]
+    lines.append(f"Flexões: {', '.join([entry['word']] + shown)}")
     degree = [f'{r["form"]} ({", ".join(DEGREE[t] for t in r["tags"].split() if t in DEGREE)}){marks(r["tags"])}'
               for r in rows if set(r["tags"].split()) & set(DEGREE)]
     degree = list(dict.fromkeys(degree))

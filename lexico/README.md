@@ -41,9 +41,17 @@ python -m lexico build data --out lexico.db \
 
 `--adjetivos` and `--radicais` load the reference tables from your `lexico`
 skill. They are optional; rows from them are shown as "sua tabela" and take
-precedence over Wiktionary. `--all-forms` keeps the full conjugation and
-declension tables (by default only the forms that mode 4 prints are stored).
+precedence over Wiktionary. From the adjectives file only tables whose second
+column is headed `Adjetivo` are read; other tables in it (the Spanish and French
+equivalents, for example) are ignored. `--all-forms` keeps the full conjugation
+and declension tables (by default only the forms that mode 4 prints are stored).
 The build streams each file line by line, so memory stays flat.
+
+The build writes `lexico.db.part` and renames it when it finishes, so a failed
+build never replaces a good database. It records a `schema_version` in `meta`
+(the query commands refuse a database with another version and ask for a
+rebuild) and, when `data/fetched_at` exists, the download date, which is the
+date printed in the `Fonte:` line. Without it the line shows the build date.
 
 Measured in the cloud container used for development, not on a laptop:
 
@@ -52,6 +60,9 @@ Measured in the cloud container used for development, not on a laptop:
 | pt | 30 s | 21 MB | 207 MB |
 | pt + de | 54 s | not measured | 365 MB |
 | pt, es, de, fr, en | 191 s | 39 MB | 1.25 GB |
+
+On a Fedora laptop, Portuguese only (November 2026): 53 s, 21 MB peak RAM,
+155 MB database, 637,259 entries.
 
 The five-language database holds 3.7 million entries. It fits on any SD card
 that holds Raspberry Pi OS; to make it smaller, fetch and build fewer
@@ -142,6 +153,16 @@ These showed up only when the code ran against the real extracts (November 2026)
   can still cut a term wrongly.
 - Accent-free lookup merges distinct words (*bucal* / *buçal*); exact spelling
   is now tried first.
+- A word with several etymologies (*manga*: sleeve, fruit, comic) is several
+  entries in the English extract, but one record in the Portuguese extract, with
+  one combined etymology and no etymology number. The Portuguese record cannot
+  be tied to one of them without guessing, so it is merged only when the English
+  side has a single entry. Otherwise it stays a separate `pt` entry, with its
+  own glosses and etymology, and takes the syllable split only if every English
+  entry agrees on it. About 2,000 Portuguese records are kept apart this way.
+- Gloss patterns whose captured noun is a generic head (*type*, *kind*, *sort*,
+  *variety*) are dropped: "pertaining to a type of verse" made *alcaic* an
+  adjective of every noun glossed "a type of ...".
 - Gloss patterns like "relativo a Rio Maior" produce place-name adjectives; a
   capitalised word after the noun is skipped.
 - English glosses use "Of a river, ..." to mean "said of rivers" (*turgid*,
@@ -175,7 +196,7 @@ CLAUDE.md      working rules for Claude Code in this folder
 
 ```sh
 python -m pytest -q tests
-python -m ruff check --isolated --line-length 120 lexico tests
+python -m ruff check --isolated --line-length 120 --target-version py39 lexico tests
 ```
 
 The fixtures in `tests/fixtures/` are hand-written imitations of Wiktextract

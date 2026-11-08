@@ -28,3 +28,7 @@
 {"word": "deltaic", "pos": "adj", "lang_code": "en", "senses": [{"glosses": ["Of, relating to, or resembling a river delta."]}]}
 {"word": "turgid", "pos": "adj", "lang_code": "en", "senses": [{"glosses": ["Of a river, inundated with excess water; swollen."]}]}
 {"word": "desafortunadamente", "pos": "adv", "lang_code": "es", "hyphenations": [{"parts": ["De‧sa‧for‧tu‧na‧da‧men‧te"]}], "senses": [{"glosses": ["unfortunately"]}]}
+{"word": "manga", "pos": "noun", "lang_code": "pt", "hyphenations": [{"parts": ["man", "ga"]}], "etymology_number": "1", "etymology_text": "Inherited from Old Galician-Portuguese manga, from Latin manica.", "senses": [{"glosses": ["sleeve"]}]}
+{"word": "manga", "pos": "noun", "lang_code": "pt", "hyphenations": [{"parts": ["man", "ga"]}], "etymology_number": "2", "etymology_text": "From Malayalam മാങ്ങ (māṅṅa).", "senses": [{"glosses": ["mango (fruit)"]}]}
+{"word": "alcaic", "pos": "adj", "lang_code": "en", "senses": [{"glosses": ["Of or pertaining to a type of verse invented by Alcaeus."]}]}
+{"word": "bonito", "pos": "adj", "lang_code": "pt", "senses": [{"glosses": ["pretty"]}], "forms": [{"form": "bonito", "tags": ["masculine", "singular"]}, {"form": "bonita", "tags": ["feminine", "singular"]}, {"form": "bonitos", "tags": ["masculine", "plural"]}]}

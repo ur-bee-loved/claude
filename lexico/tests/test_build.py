@@ -1,6 +1,13 @@
+import sqlite3
+from pathlib import Path
+
 import pytest
 
+from lexico import build, query, render
 from lexico.build import clean_etymology, ety_part, strip_tree_tail
+from lexico.text import SCHEMA_VERSION
+
+FIX = Path(__file__).with_name("fixtures")
 
 
 def test_only_listed_languages_are_loaded(db):
@@ -100,3 +107,56 @@ def test_english_relational_needs_relating_to(db):
 def test_syllable_separator_normalised(db):
     syl = db.execute("SELECT syllables FROM entry WHERE word='desafortunadamente'").fetchone()[0]
     assert syl == "De-sa-for-tu-na-da-men-te"
+
+
+def test_equivalents_table_is_not_loaded_as_adjectives(db):
+    nouns = {r[0] for r in db.execute("SELECT noun_key FROM adjective_of WHERE lang='pt'")}
+    assert {"anjo", "boca"} <= nouns
+    assert "insular" not in nouns and "felino" not in nouns
+
+
+def test_generic_head_words_are_not_nouns(db):
+    adjs = {r[0] for r in db.execute("SELECT adjective FROM adjective_of WHERE lang='en'")}
+    assert "alcaic" not in adjs
+    assert "type" not in {r[0] for r in db.execute("SELECT noun_key FROM adjective_of")}
+
+
+def test_portuguese_record_not_merged_into_one_of_several_etymologies(db):
+    en = db.execute("SELECT id FROM entry WHERE word='manga' AND source='en'").fetchall()
+    assert len(en) == 2
+    for e in en:
+        n = db.execute("SELECT COUNT(*) FROM sense WHERE entry_id=? AND gloss_lang='pt'", (e["id"],)).fetchone()[0]
+        assert n == 0
+    pt = db.execute("SELECT id, etymology_pt FROM entry WHERE word='manga' AND source='pt'").fetchall()
+    assert len(pt) == 1 and "De 1 (fruta)" in pt[0]["etymology_pt"]
+    assert db.execute("SELECT COUNT(*) FROM sense WHERE entry_id=?", (pt[0]["id"],)).fetchone()[0] == 2
+
+
+def test_failed_build_keeps_previous_database(tmp_path):
+    out = tmp_path / "lexico.db"
+    out.write_bytes(b"previous")
+    with pytest.raises(FileNotFoundError):
+        build.run(out, [str(FIX / "en.jsonl")], [], str(tmp_path / "missing.md"), None)
+    assert out.read_bytes() == b"previous"
+    assert not (tmp_path / "lexico.db.part").exists()
+
+
+def test_meta_records_schema_version_and_fetch_date(tmp_path):
+    out = tmp_path / "lexico.db"
+    build.run(out, [str(FIX / "en.jsonl")], [str(FIX / "pt.jsonl")], None, None, fetched_at="2020-01-02T03:04:05Z")
+    conn = query.connect(out)
+    meta = query.meta(conn)
+    assert meta["schema_version"] == str(SCHEMA_VERSION)
+    assert meta["fetched_at"] == "2020-01-02T03:04:05Z"
+    assert render.run(conn, "formas", "anjo", "pt").splitlines()[-1].endswith("base de 2020-01-02)")
+    conn.close()
+
+
+def test_database_without_schema_version_is_refused(tmp_path):
+    old = tmp_path / "old.db"
+    conn = sqlite3.connect(old)
+    conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    conn.commit()
+    conn.close()
+    with pytest.raises(query.SchemaMismatch, match="rebuild"):
+        query.connect(old)

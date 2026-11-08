@@ -112,3 +112,16 @@ def test_english_adjective_plural_gloss(db):
     out = render.run(db, "adjetivo", "river", "en")
     assert "Riverine" in out.splitlines()[0]
     assert "turgid" not in out
+
+
+def test_inflections_do_not_repeat_the_lemma(db):
+    out = render.run(db, "formas", "bonito", "pt").splitlines()
+    assert "Flexões: bonito, bonita, bonitos" in out
+
+
+def test_deconstruct_with_several_etymologies_does_not_mix_sources(db):
+    out = render.run(db, "desconstruir", "manga", "pt")
+    assert out.splitlines()[0] == "Man-ga"
+    assert "Definição: fruto tropical" in out
+    assert "Etimologia:" not in out and "Inherited" not in out
+    assert "Etimologia (pt.wiktionary): De 1 (fruta)" in out

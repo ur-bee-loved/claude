@@ -1,11 +1,16 @@
+import shutil
+import sqlite3
 import threading
 import urllib.request
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 from urllib.error import HTTPError
 
 import pytest
 
-from lexico import cli, web
+from lexico import cli, query, web
+
+FIX = Path(__file__).with_name("fixtures")
 
 
 def test_cli_exit_codes(db_path, capsys):
@@ -52,3 +57,27 @@ def test_web_not_found(server):
     with pytest.raises(HTTPError) as exc:
         fetch(server + "/txt?w=xyzzy&l=pt")
     assert exc.value.code == 404
+
+
+def test_cli_refuses_database_without_schema_version(tmp_path, capsys):
+    old = tmp_path / "old.db"
+    conn = sqlite3.connect(old)
+    conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    conn.commit()
+    conn.close()
+    assert cli.main(["formas", "anjo", "--db", str(old)]) == 1
+    assert "rebuild" in capsys.readouterr().err
+
+
+def test_cli_build_reads_fetch_date(tmp_path):
+    data = tmp_path / "data"
+    (data / "en").mkdir(parents=True)
+    (data / "pt").mkdir()
+    shutil.copy(FIX / "en.jsonl", data / "en" / "pt.jsonl")
+    shutil.copy(FIX / "pt.jsonl", data / "pt" / "pt.jsonl")
+    (data / "fetched_at").write_text("2020-01-02T03:04:05Z\n")
+    out = tmp_path / "lexico.db"
+    assert cli.main(["build", str(data), "--out", str(out)]) == 0
+    conn = query.connect(out)
+    assert query.meta(conn)["fetched_at"] == "2020-01-02T03:04:05Z"
+    conn.close()

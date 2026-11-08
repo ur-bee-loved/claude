@@ -3,6 +3,7 @@ from __future__ import annotations
 import unicodedata
 
 LANGS = ("pt", "es", "de", "fr", "en")
+SCHEMA_VERSION = 2
 
 LANG_NAMES = {
     "pt": "português", "es": "espanhol", "de": "alemão", "fr": "francês", "en": "inglês",
