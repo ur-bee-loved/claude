@@ -26,8 +26,12 @@ names, IPs and MACs, and the repository is public.
   header to fold it to one line (name, port counts and a state bar), or use
   **Expand all / Collapse all**. The browser remembers which panels you left
   open; the first panel starts open the very first time.
+- **Reordering:** drag a device by the grip at the left of its header and drop
+  it above or below another one (the panels shrink while you drag). With the
+  grip focused, ↑ and ↓ move it one place. The order is saved in the data
+  file. Touch screens cannot drag; use the keyboard there.
 - Inside a panel, the front-panel drawing shows every port (odd on top, even
-  below; a yellow corner marks a critical port). Hover a port, or reach it
+  below; a yellow corner marks a port flagged *Infraestrutura coletiva*). Hover a port, or reach it
   with Tab, to see a summary card: name, connected device, IP, MAC, patch
   position, desk and note. Click it to edit.
 - **Show port list** under the drawing opens the full boxes for that device,
@@ -35,7 +39,13 @@ names, IPs and MACs, and the repository is public.
 - **Racks** view: the same folding panels, each rack drawn as patch panels
   (`PP1`…) by ports (`T01`…). A yellow dot marks a position with a desk
   recorded; a cyan top edge marks a position that a device port points to.
-  Hovering a position shows its desks and wired ports.
+  Hovering a position shows its desk and wired ports.
+- **Desk** (in a rack position's editor): every position has exactly one
+  physical place, a fixed form with **Setor, Mesa, Baia, Letra** and a
+  **Status infra cabeada** dropdown (*Íntegra*, *Parcialmente danificada*,
+  *Sem soquete*, *Não instalada*, *Não identificada*). An empty status counts
+  as *Não identificada* and is shown flagged with a warning mark. *Mesa* also
+  holds the sheet's special cases (`Sala 1`, `Impressora`, `Ponto Wifi`…).
 - The legend chips filter by state; `/` focuses the search box, which matches
   names, IPs, MACs, patch references and desk fields. While searching, panels
   with matches open by themselves and the others are dimmed.
@@ -44,6 +54,8 @@ names, IPs and MACs, and the repository is public.
   the desk. **Linked to device** connects two of your own devices (uplinks)
   and updates both ends. Links in the chain jump to the other end and unfold
   its panel.
+- The panel header counts **IDENTIFIED** ports: those not in the default
+  state *Não identificado*.
 - IPv4 and MAC addresses are validated; MACs are stored as `AA:BB:CC:DD:EE:FF`.
   A port whose IP or MAC is used by another port shows a warning in its box.
 - **Export** downloads the current data as JSON; **Import** replaces it with a
@@ -51,6 +63,21 @@ names, IPs and MACs, and the repository is public.
 
 Which panels are open is kept in the browser (`localStorage`), not in the
 data file, so each person viewing the page keeps their own layout.
+
+## States
+
+| label | meaning in the sheet |
+|---|---|
+| Em uso | was "Link E atividade" |
+| Habilitada | was "Apenas link" |
+| Disponível | was "Cadeia completa funcional" |
+| Vital | was "Infra vital" |
+| Danificado | unchanged |
+| Link Gateway | unchanged |
+| Não identificado | the default for every port and position; was both "Disponível" and the cyan "Não identificado". Drawn hatched and muted. |
+
+The states live in the data file (`states`), so a label or color can be
+changed there. A port or position in the default state is not stored.
 
 ## Server
 
@@ -88,37 +115,55 @@ Choices the import makes, all at the top of `import_xlsx.py`:
 
 - **Colors to states** (`FILL_TO_STATE`), from the legend in the rack sheet.
   Two colors are not in the legend and were confirmed separately: pale yellow
-  `FFD966` is "Apenas link", bright red `FF0000` is "Danificado". Any other
-  color becomes "Não identificado" with a warning.
+  `FFD966` is "Habilitada", bright red `FF0000` is "Danificado". White, no
+  fill and the cyan of the sheet's "Não identificado" are all "Não
+  identificado". Any other color is too, with a warning.
 - **Connected device** (`KIND_RULES`) is guessed from keywords in the name
   (`WIFI` → Access point, `Impressora` → Printer, `Switch`, `Gateway`,
   `Sala` → Room outlet). Names without a keyword (GUI, PESA, MUNIFE) are left
   blank.
-- Every entry of the `CRÍTICOS` table is marked critical.
+- Every entry of the `CRÍTICOS` table is marked *Infraestrutura coletiva*.
 - `OVERRIDES` holds facts that are not in the sheet: Switch 1 port 2 is the
   uplink between the switches, with a note that the Switch 2 end is unknown.
+- **Desks:** one record per patch position (Setor, Referência as *Mesa*,
+  Baia, Letra, status). The sheet's "Endpoint 1/2" is not kept. If a position
+  appears twice the first record wins and a warning is printed. Statuses are
+  matched by text (`CABLING_TEXT` in `schema.py`); an unknown text becomes
+  *Não identificada* with a warning, and "Inexistente" becomes *Não instalada*.
 - IP and MAC are not in the spreadsheet; they are typed in the page.
 
 ## Data file
 
 ```jsonc
 {
-  "version": 1, "revision": 7, "site": "Infra",
-  "states":   [{ "id": "link_only", "label": "Apenas link", "color": "#ffb000", "pattern": "solid" }],
+  "version": 2, "revision": 7, "site": "Infra",
+  "states":   [{ "id": "enabled", "label": "Habilitada", "color": "#ffb000", "pattern": "solid" }],
   "devices":  [{ "id": "sw1", "type": "switch", "name": "Switch 1", "ports": 24,
-                 "port_data": { "5": { "state": "link_activity", "name": "Relacionamentos WIFI",
+                 "port_data": { "5": { "state": "in_use", "name": "Relacionamentos WIFI",
                                        "connected": "Access point", "ip": "", "mac": "",
-                                       "patch": "R1 PP8 T05", "critical": true,
+                                       "patch": "R1 PP8 T05", "collective": true,
                                        "link": { "device": "sw2", "port": 1 }, "note": "" } } }],
   "racks":    [{ "id": "R1", "name": "Rack 1", "panels": 13, "ports_per_panel": 24,
-                 "cells": { "PP8 T05": { "state": "unidentified", "note": "" } } }],
-  "endpoints": [{ "patch": "R1 PP8 T05", "setor": "Relacionamentos (AP A)", "referencia": "Ponto Wifi",
-                  "baia": "", "letra": "", "jack": "Endpoint", "cabling": "Íntegra" }]
+                 "cells": { "PP8 T05": { "state": "vital", "note": "" } } }],
+  "desks":    { "R1 PP8 T05": { "setor": "Relacionamentos", "referencia": "Ponto Wifi",
+                               "baia": "", "letra": "", "cabling": "ok" } }
 }
 ```
 
-Ports and patch positions with only default values are not stored. The
-server checks the structure on every save (`validate()` in `server.py`).
+Ports and patch positions with only default values are not stored. `desks` is
+keyed by patch position, so a position cannot have two. `cabling` is one of
+`ok`, `partial`, `no_socket`, `not_installed`, `unidentified`. The order of
+`devices` is the order on the page. The server checks the structure on every
+save (`validate()` in `schema.py`).
+
+**Older files are upgraded automatically.** A version 1 file (from before the
+state renames and the single desk) is converted when the server loads it, and
+written in the new format on the next save, with the old file kept in
+`data/backups/`. The conversion maps the old states (the old "Disponível" and
+"Não identificado" become one), renames `critical` to `collective`, and turns
+the list of endpoints into one desk per position; anything it cannot map (an
+unknown status, a second record for the same position) is copied into that
+position's note. Importing an old JSON export goes through the same upgrade.
 
 ## Extending
 
@@ -127,7 +172,7 @@ server checks the structure on every save (`validate()` in `server.py`).
 | a device (another switch, a router) | **Add device** in the page; no code |
 | a rack | **Add rack** in the Racks view |
 | a kind of device (firewall, NVR…) | one entry in `DEVICE_TYPES`, `web/js/deviceTypes.js` |
-| a state or a different color | the `states` list in the data file (and `STATES` in `import_xlsx.py` for new imports) |
+| a state or a different color | the `states` list in the data file (and `STATES` in `schema.py` for new files) |
 | a port field (VLAN, speed…) | one entry in `PORT_FIELDS`, `web/js/model.js`; the editor and the boxes are built from it |
 | a view (floor plan, VLAN table…) | a module exporting `{ id, label, icon, render(root) }`, listed in `VIEWS` in `web/js/main.js` |
 | an API (ping, ARP lookup) | a new path in `make_handler()` in `server.py`, called from `web/js/api.js` |
@@ -135,7 +180,8 @@ server checks the structure on every save (`validate()` in `server.py`).
 ## Layout
 
 ```
-server.py            HTTP server, validation, atomic save + backups
+server.py            HTTP server, atomic save + backups
+schema.py            data model: states, validation, upgrade of older files
 import_xlsx.py       spreadsheet -> data/network.json
 data/                network.example.json (committed), network.json + backups/ (ignored)
 web/index.html
@@ -150,7 +196,7 @@ web/js/deviceTypes.js
 web/js/views/        devicesView.js, racksView.js
 web/js/components/   folding panel, faceplate, hover card, port box, legend, editors,
                      dialogs, drawer/toasts
-tests/               pytest for server.py and import_xlsx.py
+tests/               pytest for server.py, schema.py and import_xlsx.py
 web/tests/           node --test for model.js
 ```
 

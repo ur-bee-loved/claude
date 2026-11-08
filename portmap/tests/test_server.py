@@ -21,7 +21,7 @@ def test_example_is_valid():
 
 
 @pytest.mark.parametrize("mutate, fragment", [
-    (lambda d: d.update(version=2), "version"),
+    (lambda d: d.update(version=3), "version"),
     (lambda d: d["devices"].append(copy.deepcopy(d["devices"][0])), "duplicate id"),
     (lambda d: d["devices"][0].update(ports=0), "ports"),
     (lambda d: d["devices"][1]["port_data"].update({"99": {}}), "outside"),
@@ -29,7 +29,10 @@ def test_example_is_valid():
     (lambda d: d["devices"][1]["port_data"]["1"].update(link={"device": "ghost", "port": 1}), "link"),
     (lambda d: d["devices"][1]["port_data"]["1"].update(link={"device": "router", "port": 99}), "link"),
     (lambda d: d["racks"][0].update(id="rack1"), "R1"),
-    (lambda d: d["endpoints"][0].update(patch="PP1 T3"), "endpoints[0]"),
+    (lambda d: d["desks"].update({"PP1 T3": {}}), "desks"),
+    (lambda d: d["desks"]["R1 PP2 T01"].update(baia=1), "desks"),
+    (lambda d: d["states"].pop(), "default state"),
+    (lambda d: d["racks"][0]["cells"].update({"PP1 T01": {"state": "nope"}}), "unknown state"),
 ])
 def test_validate_rejects(mutate, fragment):
     doc = copy.deepcopy(EXAMPLE)
@@ -122,3 +125,29 @@ def test_cli_version(capsys):
         srv.main(["--version"])
     assert exc.value.code == 0
     assert srv.VERSION in capsys.readouterr().out
+
+
+def test_http_upgrades_an_old_file_on_save(live):
+    base, store = live
+    old = {
+        "version": 1, "revision": 0, "site": "Old",
+        "states": [{"id": "available", "label": "Disponível", "color": "#888"}],
+        "devices": [{"id": "sw", "type": "switch", "name": "SW", "ports": 2,
+                     "port_data": {"1": {"state": "available", "critical": True, "name": "A"}}}],
+        "racks": [], "endpoints": [],
+    }
+    status, _, _ = request(base + "/api/network", "PUT", old)
+    assert status == 200
+    saved = json.loads(store.path.read_text(encoding="utf-8"))
+    assert saved["version"] == 2 and "endpoints" not in saved and saved["desks"] == {}
+    assert saved["devices"][0]["port_data"]["1"]["collective"] is True
+    assert saved["states"][-1]["id"] == "unidentified"
+
+
+def test_store_loads_an_old_data_file_as_current(tmp_path):
+    path = tmp_path / "network.json"
+    path.write_text(json.dumps({"version": 1, "revision": 5, "site": "x", "states": [], "devices": [],
+                                "racks": [], "endpoints": []}), encoding="utf-8")
+    doc, source = srv.Store(path, tmp_path / "none.json").load()
+    assert (source, doc["version"], doc["revision"]) == ("data", 2, 5)
+    assert srv.validate(doc) == []

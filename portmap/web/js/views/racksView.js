@@ -1,12 +1,13 @@
 import { h, icon, ICONS } from '../dom.js';
-import { cellKey, endpointsAt, findDevice, getCell, portsUsingPatch, stateOf } from '../model.js';
+import { DEFAULT_STATE, cablingOf, cellKey, deskAt, findDevice, getCell, portsUsingPatch, stateOf } from '../model.js';
 import { store, isExpanded, toggleHiddenState } from '../store.js';
 import { legend, stateBar } from '../components/legend.js';
 import { collapsiblePanel, foldAllButtons } from '../components/panel.js';
 import { hoverable } from '../components/hoverCard.js';
 import { rackDialog, deleteRack } from '../components/dialogs.js';
 import { openCellEditor } from '../components/cellEditor.js';
-import { endpointLabel, pad } from '../components/portCard.js';
+import { cablingTag } from '../components/cabling.js';
+import { deskLabel, pad } from '../components/portCard.js';
 
 export const racksView = {
   id: 'racks',
@@ -22,7 +23,9 @@ const stop = (fn) => (e) => {
 
 function cellMatches(doc, patch, cell, q) {
   if (!q) return true;
-  const hay = [patch, cell.note, stateOf(doc, cell.state).label, ...endpointsAt(doc, patch).map(endpointLabel)];
+  const desk = deskAt(doc, patch);
+  const hay = [patch, cell.note, stateOf(doc, cell.state).label];
+  if (desk) hay.push(deskLabel(desk), cablingOf(desk.cabling).label);
   for (const r of portsUsingPatch(doc, patch)) {
     const d = findDevice(doc, r.device);
     const p = d.port_data[String(r.port)];
@@ -31,7 +34,7 @@ function cellMatches(doc, patch, cell, q) {
   return hay.some((v) => v && String(v).toLowerCase().includes(q));
 }
 
-function cellSummary(doc, patch, cell, desks, wired) {
+function cellSummary(doc, patch, cell, desk, wired) {
   const state = stateOf(doc, cell.state);
   return {
     accent: state.color,
@@ -44,9 +47,9 @@ function cellSummary(doc, patch, cell, desks, wired) {
         const name = d.port_data[String(r.port)]?.name;
         return h('div', { class: 'hc-trail link' }, icon(ICONS.link, 13), `${d.name} · ${pad(r.port)}${name ? ` · ${name}` : ''}`);
       })),
-      desks.length > 0 && h('div', { class: 'hc-trails' }, desks.map((e) =>
-        h('div', { class: 'hc-trail' }, icon(ICONS.arrow, 13), endpointLabel(e), e.cabling && h('span', { class: 'tag plain' }, e.cabling)))),
-      !wired.length && !desks.length && h('div', { class: 'hc-sub muted' }, 'No device port or desk recorded'),
+      desk && h('div', { class: 'hc-trails' },
+        h('div', { class: 'hc-trail' }, icon(ICONS.arrow, 13), deskLabel(desk) || '—', cablingTag(desk.cabling))),
+      !wired.length && !desk && h('div', { class: 'hc-sub muted' }, 'No device port or desk recorded'),
       cell.note && h('div', { class: 'hc-note' }, cell.note),
       h('div', { class: 'hc-hint' }, 'Click to edit')),
   };
@@ -82,21 +85,21 @@ function render(root) {
         const patch = `${rack.id} ${cellKey(pp, t)}`;
         const cell = getCell(rack, pp, t);
         const state = stateOf(doc, cell.state);
-        const desks = endpointsAt(doc, patch);
+        const desk = deskAt(doc, patch);
         const wired = portsUsingPatch(doc, patch);
         counts[cell.state] = (counts[cell.state] ?? 0) + 1;
-        if (desks.length) withDesk++;
+        if (desk) withDesk++;
         const show = !ui.hiddenStates.has(cell.state) && cellMatches(doc, patch, cell, q);
         if (q && show) hits++;
         const el = h('button', {
           type: 'button',
-          class: `cell${show ? '' : ' dim'}${desks.length ? ' has-desk' : ''}${wired.length ? ' wired' : ''}`,
-          'aria-label': `${patch}, ${state.label}${desks.length ? `, ${desks.map(endpointLabel).join('; ')}` : ''}`,
+          class: `cell${show ? '' : ' dim'}${desk ? ' has-desk' : ''}${wired.length ? ' wired' : ''}`,
+          'aria-label': `${patch}, ${state.label}${desk ? `, ${deskLabel(desk)}` : ''}`,
           dataset: { pattern: state.pattern ?? 'solid' },
           style: { '--state': state.color },
           onclick: () => openCellEditor(rack.id, pp, t),
         }, h('span', { class: 'cell-num' }, pad(t)));
-        hoverable(el, () => cellSummary(doc, patch, cell, desks, wired));
+        hoverable(el, () => cellSummary(doc, patch, cell, desk, wired));
         cells.push(el);
       }
       panels.push(h('div', { class: 'panel-row' },
@@ -104,7 +107,7 @@ function render(root) {
         h('div', { class: 'panel-cells', style: { '--ports': String(rack.ports_per_panel) } }, cells)));
     }
     const total = rack.panels * rack.ports_per_panel;
-    const marked = total - (counts.available ?? 0);
+    const identified = total - (counts[DEFAULT_STATE] ?? 0);
     const key = `rack:${rack.id}`;
     const open = q ? hits > 0 : isExpanded(key, index);
 
@@ -117,7 +120,7 @@ function render(root) {
       sub: [
         h('span', { class: 'mono' }, rack.id),
         h('span', {}, `${rack.panels} × ${rack.ports_per_panel}`),
-        h('span', { class: 'accent' }, `${marked} MARKED`),
+        h('span', { class: 'accent' }, `${identified} IDENTIFIED`),
         h('span', {}, `${withDesk} WITH DESKS`),
         q && h('span', { class: 'hits' }, `${hits} MATCH${hits === 1 ? '' : 'ES'}`),
       ],

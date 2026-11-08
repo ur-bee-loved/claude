@@ -19,7 +19,7 @@ export function faceplate(doc, device, { isMatch, onOpen }) {
     const state = stateOf(doc, port.state);
     const el = h('button', {
       type: 'button',
-      class: `jack${isMatch(n) ? '' : ' dim'}${port.critical ? ' critical' : ''}`,
+      class: `jack${isMatch(n) ? '' : ' dim'}${port.collective ? ' collective' : ''}`,
       'aria-label': `Port ${n}, ${state.label}${port.name ? `, ${port.name}` : ''}`,
       dataset: { device: device.id, port: String(n), pattern: state.pattern ?? 'solid', row: rows === 2 ? (n % 2 ? 'top' : 'bottom') : 'top' },
       style: { '--state': state.color },

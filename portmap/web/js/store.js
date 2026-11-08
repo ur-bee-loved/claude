@@ -1,4 +1,4 @@
-import { saveNetwork, ConflictError } from './api.js';
+import { loadNetwork, saveNetwork, ConflictError } from './api.js';
 import { loadPrefs, savePrefs } from './prefs.js';
 
 // Single source of truth for the page. Views read `store.doc` / `store.ui`,
@@ -78,12 +78,17 @@ export function mutate(fn) {
   scheduleSave();
 }
 
-// Replaces the document (JSON import) but keeps the server's revision so the save is accepted.
-export function replaceDoc(doc) {
+// Replaces the document with an imported one. The server validates it and
+// upgrades older files, so the page then loads back what was actually stored.
+// Throws (and changes nothing) when the server refuses it.
+export async function replaceDoc(doc) {
+  while (saving) await new Promise((resolve) => setTimeout(resolve, 25));
+  clearTimeout(saveTimer);
   doc.revision = store.doc.revision;
-  store.doc = doc;
-  notify('doc');
-  scheduleSave();
+  await saveNetwork(doc);
+  const stored = await loadNetwork();
+  init(stored.doc, stored.source);
+  setStatus('saved');
 }
 
 function setStatus(saveStatus, saveError = '') {

@@ -18,32 +18,29 @@ import re
 import sys
 from pathlib import Path
 
-from server import DATA_FILE, PROG, SCHEMA_VERSION, Store, validate
-
-STATES = [
-    {"id": "full_chain", "label": "Cadeia completa funcional", "color": "#3d8bff", "pattern": "solid"},
-    {"id": "link_activity", "label": "Link E atividade", "color": "#2bff88", "pattern": "solid"},
-    {"id": "link_only", "label": "Apenas link", "color": "#ffb000", "pattern": "solid"},
-    {"id": "available", "label": "Disponível", "color": "#8a96ab", "pattern": "dashed"},
-    {"id": "damaged", "label": "Danificado", "color": "#ff3355", "pattern": "solid"},
-    {"id": "vital", "label": "Infra vital", "color": "#ff2bd6", "pattern": "solid"},
-    {"id": "gateway", "label": "Link Gateway", "color": "#e8eef8", "pattern": "solid"},
-    {"id": "unidentified", "label": "Não identificado", "color": "#31d7e8", "pattern": "hatched"},
-]
+from schema import (
+    DEFAULT_CABLING,
+    DEFAULT_STATE,
+    SCHEMA_VERSION,
+    STATES,
+    cabling_id,
+    validate,
+)
+from server import DATA_FILE, PROG, Store
 
 # Spreadsheet fill (RRGGBB) -> state id, from the legend in the rack sheet.
 FILL_TO_STATE = {
-    None: "available",
-    "FFFFFF": "available",
-    "4A86E8": "full_chain",
-    "00FF00": "link_activity",
-    "F1C232": "link_only",
-    "FFD966": "link_only",  # pale yellow on Switch 2, confirmed as "Apenas link"
+    None: DEFAULT_STATE,
+    "FFFFFF": DEFAULT_STATE,
+    "4A86E8": "available",
+    "00FF00": "in_use",
+    "F1C232": "enabled",
+    "FFD966": "enabled",  # pale yellow on Switch 2, confirmed as "Apenas link"
     "CC0000": "damaged",
     "FF0000": "damaged",  # bright red rack cells (PESA, MUNIFE), confirmed as "Danificado"
     "FF00FF": "vital",
     "000000": "gateway",
-    "00FFFF": "unidentified",
+    "00FFFF": DEFAULT_STATE,  # cyan "Não identificado", now the same state as the empty default
 }
 
 # First matching keyword in the reference name sets "Connected device".
@@ -116,7 +113,7 @@ class Importer:
         if hx in FILL_TO_STATE:
             return FILL_TO_STATE[hx]
         self.warn(f"{where}: fill {hx} is not in the legend, marked Não identificado")
-        return "unidentified"
+        return DEFAULT_STATE
 
     def switches(self, ws):
         devices = []
@@ -135,7 +132,7 @@ class Importer:
                         if isinstance(pc.value, (int, float)) and 1 <= pc.value <= count:
                             found = True
                             st = self.state(pc, f"{ws.title}!{pc.coordinate} (switch {num} port {int(pc.value)})")
-                            if st != "available":
+                            if st != DEFAULT_STATE:
                                 dev["port_data"][str(int(pc.value))] = {"state": st}
                     if not found:
                         break
@@ -147,7 +144,7 @@ class Importer:
         by_id = {d["id"]: d for d in devices}
         header = next((c for row in ws.iter_rows() for c in row if text(c.value).upper() == "NOME"), None)
         if header is None:
-            self.warn(f"{ws.title}: no NOME column, critical devices skipped")
+            self.warn(f"{ws.title}: no NOME column, CRÍTICOS table skipped")
             return
         row_cells = {text(ws.cell(header.row, c).value).upper(): c for c in range(header.column, header.column + 12)}
         rack_col = row_cells.get("RACK")
@@ -163,10 +160,10 @@ class Importer:
                 if not dev or not 1 <= int(port) <= dev["ports"]:
                     self.warn(f"{ws.title}!row {r}: {name!r} points at missing port ({sw}, {port})")
                     continue
-                p = dev["port_data"].setdefault(port, {"state": "available"})
+                p = dev["port_data"].setdefault(port, {"state": DEFAULT_STATE})
                 if p.get("name"):
                     self.warn(f"switch {sw} port {port}: {p['name']!r} replaced by {name!r}")
-                p.update({"name": name, "critical": True})
+                p.update({"name": name, "collective": True})
                 if kind := kind_of(name):
                     p["connected"] = kind
                 if patch:
@@ -194,7 +191,7 @@ class Importer:
                     for col, pp in panels.items():
                         pc = ws.cell(r, col)
                         st = self.state(pc, f"{ws.title}!{pc.coordinate} ({rid} PP{pp} T{port:02d})")
-                        if st != "available":
+                        if st != DEFAULT_STATE:
                             rack["cells"][f"PP{pp} T{port:02d}"] = {"state": st}
                     r += 1
                 rack["panels"] = max(panels.values(), default=0)
@@ -204,11 +201,12 @@ class Importer:
                     self.warn(f"{ws.title}!{cell.coordinate}: {rid} has no PP/T grid, skipped")
         return racks
 
-    def endpoints(self, ws):
-        """Rows of every table whose header has Endpoint columns. Header cells set
-        the role of their column until another header row changes it."""
+    def desks(self, ws):
+        """One desk record per patch position, from every table that has Endpoint
+        columns. Header cells set the role of their column until another header
+        row changes it. A position that appears twice keeps its first record."""
         roles = {}
-        out = []
+        out = {}
         for row in ws.iter_rows():
             header_cols = set()
             for cell in row:
@@ -216,28 +214,34 @@ class Importer:
                 role = HEADER_ROLES.get(t) or ("endpoint" if t.startswith("endpoint") else None) \
                     or ("cabling" if t.startswith("status") else None)
                 if role:
-                    roles[cell.column] = (role, text(cell.value))
+                    roles[cell.column] = role
                     header_cols.add(cell.column)
             for run in self._runs(sorted(roles)):
                 if header_cols & set(run):
                     continue
-                values = {col: ws.cell(row[0].row, col).value for col in run}
-                base = {}
+                r = row[0].row
+                desk = {}
                 for col in run:
-                    role, _ = roles[col]
-                    if role in ("setor", "referencia", "baia", "letra", "cabling") and text(values[col]):
-                        v = text(values[col])
-                        base[role] = v[:1].upper() + v[1:] if role == "cabling" else v
+                    role = roles[col]
+                    raw = text(ws.cell(r, col).value)
+                    if role in ("setor", "referencia", "baia", "letra") and raw:
+                        desk[role] = raw
+                    elif role == "cabling" and raw:
+                        known = cabling_id(raw)
+                        if known is None:
+                            self.warn(f"{ws.title}!row {r}: status {raw!r} is not a known cabling status, marked {DEFAULT_CABLING}")
+                        desk["cabling"] = known or DEFAULT_CABLING
                 for col in run:
-                    role, label = roles[col]
-                    if role != "endpoint":
+                    if roles[col] != "endpoint":
                         continue
-                    raw = text(values[col])
+                    raw = text(ws.cell(r, col).value)
                     patch = parse_patch(raw)
-                    if patch:
-                        out.append({"patch": patch, **base, "jack": label})
+                    if patch and patch in out:
+                        self.warn(f"{ws.title}!row {r}: {patch} already has a desk record, the first one is kept")
+                    elif patch:
+                        out[patch] = dict(desk)
                     elif raw and raw.lower() != "x":
-                        self.warn(f"{ws.title}!row {row[0].row}: endpoint {raw!r} is not a patch reference, skipped")
+                        self.warn(f"{ws.title}!row {r}: endpoint {raw!r} is not a patch reference, skipped")
         return out
 
     @staticmethod
@@ -271,9 +275,9 @@ def build(wb, switch_sheet, desk_sheet, site, source_name):
     for (dev_id, port), values in OVERRIDES.items():
         dev = next((d for d in devices if d["id"] == dev_id), None)
         if dev and port <= dev["ports"]:
-            dev["port_data"].setdefault(str(port), {"state": "available"}).update(values)
+            dev["port_data"].setdefault(str(port), {"state": DEFAULT_STATE}).update(values)
     racks = imp.racks(ws)
-    endpoints = imp.endpoints(find_sheet(wb, desk_sheet)) if desk_sheet else []
+    desks = imp.desks(find_sheet(wb, desk_sheet)) if desk_sheet else {}
     doc = {
         "version": SCHEMA_VERSION,
         "revision": 0,
@@ -283,7 +287,7 @@ def build(wb, switch_sheet, desk_sheet, site, source_name):
         "states": STATES,
         "devices": devices,
         "racks": racks,
-        "endpoints": endpoints,
+        "desks": desks,
     }
     return doc, imp.warnings
 
@@ -323,7 +327,7 @@ def main(argv=None):
         print(f"warning: {w}", file=sys.stderr)
     named = sum(1 for d in doc["devices"] for x in d["port_data"].values() if x.get("name"))
     print(f"{args.output}: {len(doc['devices'])} devices ({named} named ports), {len(doc['racks'])} racks "
-          f"({sum(len(r['cells']) for r in doc['racks'])} marked positions), {len(doc['endpoints'])} desk jacks, "
+          f"({sum(len(r['cells']) for r in doc['racks'])} marked positions), {len(doc['desks'])} desk records, "
           f"{len(warnings)} warnings", file=sys.stderr)
     return 0
 

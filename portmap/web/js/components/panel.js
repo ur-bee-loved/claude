@@ -3,11 +3,13 @@ import { setExpanded } from '../store.js';
 
 // A device or rack panel that folds into its header. The body is built only
 // while the panel is open. `open` overrides the saved choice (used while a
-// search is active, so panels with matches open by themselves).
-export function collapsiblePanel({ key, open, iconPath, title, sub, bar, actions, body, className = '' }) {
+// search is active, so panels with matches open by themselves). `handle` is an
+// optional element drawn before the title, such as a drag handle.
+export function collapsiblePanel({ key, open, iconPath, title, sub, bar, actions, body, handle, className = '' }) {
   const bodyId = `panel-${key.replace(/[^a-z0-9-]/gi, '-')}`;
   return h('section', { class: `device-panel ${className}${open ? '' : ' collapsed'}`, 'aria-label': title },
     h('header', { class: 'device-head' },
+      handle,
       h('button', {
         type: 'button',
         class: 'panel-toggle',

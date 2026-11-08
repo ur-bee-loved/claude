@@ -1,6 +1,6 @@
 import { h, icon, ICONS } from '../dom.js';
 import {
-  PORT_FIELDS, chainFor, endpointsAt, findDevice, findRack, formatPatch, getCell, getPort,
+  PORT_FIELDS, chainFor, deskAt, findDevice, findRack, formatPatch, getCell, getPort,
   normalizeField, parsePatch, portsUsingPatch, setLink, setPort, stateOf,
 } from '../model.js';
 import { CONNECTED_KINDS, deviceType } from '../deviceTypes.js';
@@ -8,7 +8,8 @@ import { store, mutate } from '../store.js';
 import { nav } from '../nav.js';
 import { openDrawer, closeDrawer, confirmDialog, toast } from './overlay.js';
 import { textField, selectField, checkField } from './fields.js';
-import { pad, endpointLabel } from './portCard.js';
+import { pad, deskLabel } from './portCard.js';
+import { cablingTag } from './cabling.js';
 
 const SUGGESTIONS = { connected: CONNECTED_KINDS };
 
@@ -30,7 +31,7 @@ export function openPortEditor(deviceId, n) {
     swatch.style.setProperty('--state', stateOf(doc, stateField.input.value).color);
   });
 
-  const critical = checkField({ label: 'Critical infrastructure', checked: port.critical });
+  const collective = checkField({ label: 'Infraestrutura coletiva', checked: port.collective });
 
   const fields = PORT_FIELDS.map((f) => ({
     def: f,
@@ -67,7 +68,7 @@ export function openPortEditor(deviceId, n) {
   renderPreview();
 
   const save = () => {
-    const next = { state: stateField.input.value, critical: critical.input.checked, link: port.link };
+    const next = { state: stateField.input.value, collective: collective.input.checked, link: port.link };
     let ok = true;
     for (const { def, ui } of fields) {
       const r = normalizeField(def.kind, ui.input.value);
@@ -115,7 +116,7 @@ export function openPortEditor(deviceId, n) {
     title: `Port ${pad(n)}`,
     accent: state.color,
     body: [
-      h('div', { class: 'field-grid' }, stateField.el, critical.el),
+      h('div', { class: 'field-grid' }, stateField.el, collective.el),
       fields.map((f) => f.ui.el),
       h('div', { class: 'field-grid link-grid' }, linkDevice.el, linkPort.el),
       h('h3', { class: 'section-title' }, 'Connection chain'),
@@ -171,12 +172,10 @@ function chainView(doc, device, n, patchText) {
       h('button', { type: 'button', class: 'linkish', onclick: () => nav.openPort(r.device, r.port) }, `${d.name} · ${pad(r.port)} uses this patch too`)));
   }
 
-  const eps = endpointsAt(doc, patch);
-  if (!eps.length) steps.push(h('li', { class: 'step muted' }, h('span', { class: 'step-k' }, 'DESK'), h('span', {}, 'No desk recorded for this patch')));
-  for (const e of eps) {
-    steps.push(h('li', { class: 'step' }, h('span', { class: 'step-k' }, 'DESK'),
-      h('span', {}, endpointLabel(e)),
-      e.cabling && h('span', { class: 'tag plain' }, e.cabling)));
-  }
+  const desk = deskAt(doc, patch);
+  steps.push(h('li', { class: `step${desk ? '' : ' muted'}` }, h('span', { class: 'step-k' }, 'DESK'),
+    desk
+      ? [h('span', {}, deskLabel(desk) || 'No place recorded'), cablingTag(desk.cabling)]
+      : h('span', {}, 'No desk recorded for this patch')));
   return h('ol', { class: 'chain' }, steps);
 }
