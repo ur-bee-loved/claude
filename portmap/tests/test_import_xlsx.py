@@ -63,13 +63,17 @@ def make_workbook(path):
     data = [
         ["Receitas", "Mesa 1", 1.0, "A", "R1 PP1 T02", "r1pp1t3", "Íntegra"],
         ["Receitas", "Mesa 1", 1.0, "B", "x", "caso especial", "parcialmente danificada "],
+        ["Receitas", "Mesa 1", 1.0, "C", "R1 PP1 T05", "x", "Parcialmente Danificada "],
+        ["Receitas", "Mesa 1", 1.0, "D", "R1 PP1 T06", "x", "Inexistente"],
+        ["Receitas", "Mesa 2", 1.0, "A", "R1 PP1 T07", "x", "???"],
+        ["Receitas", "Mesa 2", 1.0, "B", "R1 PP1 T08", "x", None],
     ]
     for r, row in enumerate(data, 4):
         for c, v in enumerate(row, 1):
             ref.cell(r, c, v)
     ref["I4"], ref["J4"], ref["K4"], ref["L4"] = "Sala 1", "R1 PP2 T01", "x", "íntegra"
-    ref["I5"], ref["J5"], ref["K5"], ref["L5"] = "Setor", "Referência", "Endpoint", "Status infra cabeada:"
-    ref["I6"], ref["J6"], ref["K6"], ref["L6"] = "Operações", "Impressora", "R1 PP2 T01", "Íntegra"
+    ref["I9"], ref["J9"], ref["K9"], ref["L9"] = "Setor", "Referência", "Endpoint", "Status infra cabeada:"
+    ref["I10"], ref["J10"], ref["K10"], ref["L10"] = "Operações", "Impressora", "R1 PP2 T01", "Íntegra"
     wb.save(path)
 
 
@@ -88,9 +92,9 @@ def test_switch_ports_and_states(imported):
     sw1, sw2 = doc["devices"]
     assert (sw1["id"], sw1["ports"], sw2["ports"]) == ("sw1", 4, 2)
     assert sw1["port_data"]["1"]["state"] == "gateway"
-    assert sw1["port_data"]["3"]["state"] == "link_activity"
+    assert sw1["port_data"]["3"]["state"] == "in_use"
     assert "4" not in sw1["port_data"]
-    assert sw2["port_data"]["2"]["state"] == "link_only"
+    assert sw2["port_data"]["2"]["state"] == "enabled"
     assert sw2["port_data"]["1"]["state"] == "unidentified"
 
 
@@ -98,7 +102,7 @@ def test_critical_table(imported):
     doc, *_ = imported
     sw1, sw2 = doc["devices"]
     p = sw1["port_data"]["3"]
-    assert (p["name"], p["connected"], p["patch"], p["critical"]) == ("Sala de vidro WIFI", "Access point", "R1 PP1 T02", True)
+    assert (p["name"], p["connected"], p["patch"], p["collective"]) == ("Sala de vidro WIFI", "Access point", "R1 PP1 T02", True)
     assert sw1["port_data"]["1"]["name"] == sw2["port_data"]["1"]["name"] == "Link Gateway"
     assert "patch" not in sw1["port_data"]["1"]
     assert sw2["port_data"]["2"]["connected"] == "Printer"
@@ -114,19 +118,27 @@ def test_rack_grid(imported):
     doc, *_ = imported
     rack = doc["racks"][0]
     assert (rack["id"], rack["panels"], rack["ports_per_panel"]) == ("R1", 2, 3)
-    assert rack["cells"] == {"PP1 T02": {"state": "full_chain"}, "PP2 T01": {"state": "damaged"}}
+    assert rack["cells"] == {"PP1 T02": {"state": "available"}, "PP2 T01": {"state": "damaged"}}
 
 
-def test_desks(imported):
+def test_one_desk_per_position(imported):
     doc, *_ = imported
-    eps = doc["endpoints"]
-    assert {"patch": "R1 PP1 T02", "setor": "Receitas", "referencia": "Mesa 1", "baia": "1", "letra": "A",
-            "cabling": "Íntegra", "jack": "Endpoint 1"} in eps
-    assert any(e["patch"] == "R1 PP1 T03" and e["jack"] == "Endpoint 2" for e in eps)
-    assert {"patch": "R1 PP2 T01", "referencia": "Sala 1", "cabling": "Íntegra", "jack": "Endpoint 1"} in eps
-    assert {"patch": "R1 PP2 T01", "setor": "Operações", "referencia": "Impressora", "cabling": "Íntegra",
-            "jack": "Endpoint"} in eps
-    assert len(eps) == 4
+    desks = doc["desks"]
+    assert desks["R1 PP1 T02"] == {"setor": "Receitas", "referencia": "Mesa 1", "baia": "1", "letra": "A", "cabling": "ok"}
+    assert desks["R1 PP1 T03"]["referencia"] == "Mesa 1" and desks["R1 PP1 T03"]["cabling"] == "ok"
+    # the second table lists R1 PP2 T01 again; the first record is kept
+    assert desks["R1 PP2 T01"] == {"referencia": "Sala 1", "cabling": "ok"}
+    assert len(desks) == 7
+    assert all("jack" not in d for d in desks.values())
+
+
+def test_cabling_statuses(imported):
+    doc, *_ = imported
+    desks = doc["desks"]
+    assert desks["R1 PP1 T05"]["cabling"] == "partial"
+    assert desks["R1 PP1 T06"]["cabling"] == "not_installed"
+    assert desks["R1 PP1 T07"]["cabling"] == "unidentified"
+    assert "cabling" not in desks["R1 PP1 T08"]
 
 
 def test_warnings_and_overwrite(imported, capsys):
@@ -139,5 +151,7 @@ def test_warnings_and_overwrite(imported, capsys):
     assert "fill 123456" in err
     assert "'caso especial'" in err
     assert "'Fantasma' has no switch port" in err
+    assert "R1 PP2 T01 already has a desk record" in err
+    assert "status '???'" in err
     assert json.loads(out.read_text(encoding="utf-8"))["revision"] == 2
     assert len(list((tmp_path / "backups").glob("*.json"))) == 1

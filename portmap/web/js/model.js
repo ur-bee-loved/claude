@@ -1,6 +1,6 @@
 // Pure data functions: no DOM access, so they run in the browser and under `node --test`.
 
-export const DEFAULT_STATE = 'available';
+export const DEFAULT_STATE = 'unidentified';
 
 // Editable port fields. The editor and the port cards are both built from this
 // list, so a new field only needs a new entry here.
@@ -13,14 +13,29 @@ export const PORT_FIELDS = [
   { key: 'note', label: 'Note', kind: 'textarea', card: false },
 ];
 
-export const ENDPOINT_FIELDS = [
-  { key: 'setor', label: 'Setor' },
-  { key: 'referencia', label: 'Referência' },
-  { key: 'baia', label: 'Baia' },
-  { key: 'letra', label: 'Letra' },
-  { key: 'jack', label: 'Endpoint' },
-  { key: 'cabling', label: 'Status infra cabeada' },
+// The one desk record a patch position can have: its physical place.
+export const DESK_FIELDS = [
+  { key: 'setor', label: 'Setor', placeholder: 'Operação' },
+  { key: 'referencia', label: 'Mesa', placeholder: 'Mesa 4' },
+  { key: 'baia', label: 'Baia', placeholder: '1' },
+  { key: 'letra', label: 'Letra', placeholder: 'A' },
 ];
+
+// Options of "Status infra cabeada". An empty status counts as the default.
+// The server stores the ids (CABLING_IDS in schema.py).
+export const CABLING_STATUSES = [
+  { id: 'ok', label: 'Íntegra', color: '#2bff88' },
+  { id: 'partial', label: 'Parcialmente danificada', color: '#ffb000' },
+  { id: 'no_socket', label: 'Sem soquete', color: '#ff3355' },
+  { id: 'not_installed', label: 'Não instalada', color: '#b58cff' },
+  { id: 'unidentified', label: 'Não identificada', color: '#8a96ab' },
+];
+export const DEFAULT_CABLING = 'unidentified';
+
+export function cablingOf(id) {
+  const found = CABLING_STATUSES.find((c) => c.id === (id || DEFAULT_CABLING));
+  return found ?? { id, label: String(id), color: '#8a96ab' };
+}
 
 const PATCH_RE = /^\s*R\s*(\d+)\s*PP\s*(\d+)\s*T\s*(\d+)\s*$/i;
 
@@ -115,8 +130,17 @@ export function setCell(rack, panel, port, cell) {
   else rack.cells[key] = { state: DEFAULT_STATE, ...clean };
 }
 
-export function endpointsAt(doc, patch) {
-  return (doc.endpoints ?? []).filter((e) => e.patch === patch);
+export function deskAt(doc, patch) {
+  return doc.desks?.[patch] ?? null;
+}
+
+// A desk with no text and no cabling status is the same as no desk, so it is removed.
+export function setDesk(doc, patch, desk) {
+  doc.desks ??= {};
+  const clean = Object.fromEntries(Object.entries(desk).filter(([, v]) => v !== '' && v != null));
+  if (clean.cabling === DEFAULT_CABLING) delete clean.cabling;
+  if (Object.keys(clean).length) doc.desks[patch] = clean;
+  else delete doc.desks[patch];
 }
 
 // Every device port whose patch field points at this patch-panel position.
@@ -130,11 +154,11 @@ export function portsUsingPatch(doc, patch) {
   return out;
 }
 
-// Path from a device port outwards: linked device port, patch-panel cell, desk endpoints.
+// Path from a device port outwards: linked device port, patch-panel cell, desk.
 export function chainFor(doc, deviceId, n) {
   const device = findDevice(doc, deviceId);
   const port = getPort(device, n);
-  const result = { port, link: null, patch: null, rack: null, cell: null, endpoints: [] };
+  const result = { port, link: null, patch: null, rack: null, cell: null, desk: null };
   if (port.link) {
     const other = findDevice(doc, port.link.device);
     if (other) result.link = { device: other, port: port.link.port };
@@ -146,7 +170,7 @@ export function chainFor(doc, deviceId, n) {
     if (result.rack && p.panel <= result.rack.panels && p.port <= result.rack.ports_per_panel) {
       result.cell = getCell(result.rack, p.panel, p.port);
     }
-    result.endpoints = endpointsAt(doc, result.patch);
+    result.desk = deskAt(doc, result.patch);
   }
   return result;
 }
@@ -215,7 +239,7 @@ export function portMatches(doc, device, n, query) {
   const hay = [
     String(n), port.name, port.connected, port.ip, port.mac, port.patch, port.note,
     stateOf(doc, port.state).label,
-    ...chain.endpoints.flatMap((e) => ENDPOINT_FIELDS.map((f) => e[f.key])),
+    ...(chain.desk ? [...DESK_FIELDS.map((f) => chain.desk[f.key]), cablingOf(chain.desk.cabling).label] : []),
   ];
   return hay.some((v) => v != null && String(v).toLowerCase().includes(q));
 }
@@ -243,4 +267,24 @@ export function removeDevice(doc, id) {
     }
   }
   doc.devices = doc.devices.filter((d) => d.id !== id);
+}
+
+// Moves a device next to another one. Returns false when nothing changed.
+export function moveDevice(doc, id, targetId, after) {
+  const from = doc.devices.findIndex((d) => d.id === id);
+  const target = doc.devices.findIndex((d) => d.id === targetId);
+  if (from < 0 || target < 0 || id === targetId) return false;
+  const [device] = doc.devices.splice(from, 1);
+  const at = doc.devices.findIndex((d) => d.id === targetId);
+  doc.devices.splice(after ? at + 1 : at, 0, device);
+  return doc.devices.findIndex((d) => d.id === id) !== from;
+}
+
+// Moves a device one place up (-1) or down (1).
+export function shiftDevice(doc, id, delta) {
+  const i = doc.devices.findIndex((d) => d.id === id);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= doc.devices.length) return false;
+  [doc.devices[i], doc.devices[j]] = [doc.devices[j], doc.devices[i]];
+  return true;
 }

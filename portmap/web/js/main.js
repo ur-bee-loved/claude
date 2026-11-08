@@ -86,9 +86,12 @@ async function importJson(file) {
   }
   if (!(await confirmDialog('Import JSON', `Replace all current data with ${file.name}? The server keeps a backup of the current file.`,
     { danger: true, confirmLabel: 'Replace' }))) return;
-  doc.endpoints ??= [];
-  replaceDoc(doc);
-  toast(`Imported ${file.name}`, { kind: 'ok' });
+  try {
+    await replaceDoc(doc);
+    toast(`Imported ${file.name}`, { kind: 'ok' });
+  } catch (err) {
+    toast(`Import rejected: ${err.message}`, { kind: 'error', timeout: 8000 });
+  }
 }
 
 function flashPort(deviceId, n) {

@@ -1,7 +1,7 @@
 import { h, icon, ICONS } from '../dom.js';
-import { DEFAULT_STATE, countStates, findDuplicates, getPort, portMatches } from '../model.js';
+import { DEFAULT_STATE, countStates, findDuplicates, getPort, moveDevice, portMatches, shiftDevice } from '../model.js';
 import { deviceType } from '../deviceTypes.js';
-import { store, isExpanded, toggleHiddenState, togglePortList } from '../store.js';
+import { store, isExpanded, mutate, toggleHiddenState, togglePortList } from '../store.js';
 import { faceplate } from '../components/faceplate.js';
 import { portCard } from '../components/portCard.js';
 import { legend, stateBar } from '../components/legend.js';
@@ -20,6 +20,87 @@ const stop = (fn) => (e) => {
   e.stopPropagation();
   fn();
 };
+
+// ---- reordering: drag the handle onto another panel, or focus it and press ↑ / ↓ ----
+
+let draggingId = null;
+
+const handleFor = (id) => document.querySelector(`.drag-handle[data-device="${CSS.escape(id)}"]`);
+
+// Same move on a copy, to know whether anything would change before saving.
+const wouldMove = (fn) => fn({ devices: [...store.doc.devices] });
+
+function clearDropMarks() {
+  for (const el of document.querySelectorAll('.drop-before, .drop-after, .dragging')) {
+    el.classList.remove('drop-before', 'drop-after', 'dragging');
+  }
+  document.getElementById('view').classList.remove('reordering');
+}
+
+function reorderHandle(device) {
+  return h('button', {
+    type: 'button',
+    class: 'drag-handle',
+    draggable: true,
+    title: 'Drag to reorder, or focus and press ↑ ↓',
+    'aria-label': `Reorder ${device.name}: drag it, or press arrow up or down`,
+    dataset: { device: device.id },
+    ondragstart: (e) => {
+      const panel = e.currentTarget.closest('.device-panel');
+      draggingId = device.id;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', device.id);
+      e.dataTransfer.setDragImage(panel.querySelector('.device-head'), 24, 24);
+      // Changing the layout inside dragstart can cancel the drag, so wait a tick.
+      setTimeout(() => {
+        panel.classList.add('dragging');
+        document.getElementById('view').classList.add('reordering');
+      }, 0);
+    },
+    ondragend: () => {
+      draggingId = null;
+      clearDropMarks();
+    },
+    onkeydown: (e) => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      e.preventDefault();
+      const delta = e.key === 'ArrowUp' ? -1 : 1;
+      if (!wouldMove((copy) => shiftDevice(copy, device.id, delta))) return;
+      mutate((doc) => shiftDevice(doc, device.id, delta));
+      handleFor(device.id)?.focus();
+    },
+  }, icon(ICONS.grip, 18));
+}
+
+function makeDropTarget(panel, deviceId) {
+  const isAfter = (e) => {
+    const r = panel.getBoundingClientRect();
+    return e.clientY > r.top + r.height / 2;
+  };
+  panel.addEventListener('dragover', (e) => {
+    if (!draggingId || draggingId === deviceId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const after = isAfter(e);
+    panel.classList.toggle('drop-after', after);
+    panel.classList.toggle('drop-before', !after);
+  });
+  panel.addEventListener('dragleave', (e) => {
+    if (!panel.contains(e.relatedTarget)) panel.classList.remove('drop-before', 'drop-after');
+  });
+  panel.addEventListener('drop', (e) => {
+    if (!draggingId || draggingId === deviceId) return;
+    e.preventDefault();
+    const id = draggingId;
+    const after = isAfter(e);
+    draggingId = null;
+    clearDropMarks();
+    if (wouldMove((copy) => moveDevice(copy, id, deviceId, after))) {
+      mutate((doc) => moveDevice(doc, id, deviceId, after));
+      handleFor(id)?.scrollIntoView({ block: 'nearest' });
+    }
+  });
+}
 
 function render(root) {
   const { doc, ui } = store;
@@ -52,22 +133,23 @@ function render(root) {
     const shown = [];
     for (let n = 1; n <= device.ports; n++) if (visible(n)) shown.push(n);
     const counts = countStates(device);
-    const inUse = device.ports - (counts[DEFAULT_STATE] ?? 0);
+    const identified = device.ports - (counts[DEFAULT_STATE] ?? 0);
     const type = deviceType(device.type);
     const key = `device:${device.id}`;
     const open = searching ? shown.length > 0 : isExpanded(key, index);
     const listOpen = Boolean(ui.portList[device.id]);
 
-    root.append(collapsiblePanel({
+    const panel = collapsiblePanel({
       key,
       open,
+      handle: reorderHandle(device),
       iconPath: type.icon,
       title: device.name,
       className: searching && !shown.length ? 'no-hits' : '',
       sub: [
         h('span', {}, type.label.toUpperCase()),
         h('span', {}, `${device.ports} PORTS`),
-        h('span', { class: 'accent' }, `${inUse} IN USE`),
+        h('span', { class: 'accent' }, `${identified} IDENTIFIED`),
         searching && h('span', { class: 'hits' }, `${shown.length} MATCH${shown.length === 1 ? '' : 'ES'}`),
         device.note && h('span', { class: 'muted' }, device.note),
       ],
@@ -90,6 +172,8 @@ function render(root) {
           ? h('div', { class: 'port-grid' }, shown.map((n) => portCard(doc, device, n, { dupes: dupeKeys(device, n), onOpen: openPortEditor })))
           : h('p', { class: 'muted no-match' }, 'No ports match the current search or filter.')),
       ],
-    }));
+    });
+    makeDropTarget(panel, device.id);
+    root.append(panel);
   });
 }

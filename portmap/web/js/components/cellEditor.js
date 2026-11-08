@@ -1,6 +1,7 @@
-import { h, icon, ICONS } from '../dom.js';
+import { h } from '../dom.js';
 import {
-  ENDPOINT_FIELDS, cellKey, endpointsAt, findDevice, findRack, getCell, portsUsingPatch, setCell, stateOf,
+  CABLING_STATUSES, DEFAULT_CABLING, DESK_FIELDS, cellKey, deskAt, findDevice, findRack, getCell,
+  portsUsingPatch, setCell, setDesk, stateOf,
 } from '../model.js';
 import { store, mutate } from '../store.js';
 import { nav } from '../nav.js';
@@ -15,6 +16,7 @@ export function openCellEditor(rackId, panel, port) {
   const cell = getCell(rack, panel, port);
   const patch = `${rackId} ${cellKey(panel, port)}`;
   const state = stateOf(doc, cell.state);
+  const desk = deskAt(doc, patch) ?? {};
 
   const stateField = selectField({
     label: 'Patch state',
@@ -23,22 +25,15 @@ export function openCellEditor(rackId, panel, port) {
   });
   const note = textField({ label: 'Note', value: cell.note ?? '', multiline: true });
 
-  // Desk rows are edited as a list; existing ones keep their position in doc.endpoints.
-  const rows = endpointsAt(doc, patch).map((e) => ({ values: { ...e } }));
-  const list = h('div', { class: 'endpoint-list' });
-  const renderRows = () => {
-    list.replaceChildren(...rows.map((row, i) => h('fieldset', { class: 'endpoint' },
-      h('legend', {}, `Desk ${i + 1}`,
-        h('button', { type: 'button', class: 'icon-btn small', title: 'Remove desk', onclick: () => { rows.splice(i, 1); renderRows(); } },
-          icon(ICONS.trash, 14))),
-      h('div', { class: 'field-grid three' }, ENDPOINT_FIELDS.map((f) => {
-        const ui = textField({ label: f.label, value: row.values[f.key] ?? '' });
-        ui.input.addEventListener('input', () => { row.values[f.key] = ui.input.value; });
-        return ui.el;
-      })))));
-    if (!rows.length) list.append(h('p', { class: 'muted' }, 'No desk recorded for this patch position.'));
-  };
-  renderRows();
+  // A patch position has exactly one place, so this is a fixed form, not a list.
+  const deskFields = DESK_FIELDS.map((f) => ({
+    key: f.key,
+    ui: textField({ label: f.label, value: desk[f.key] ?? '', placeholder: f.placeholder }),
+  }));
+  const current = desk.cabling || DEFAULT_CABLING;
+  const options = CABLING_STATUSES.map((c) => ({ value: c.id, label: c.label }));
+  if (!options.some((o) => o.value === current)) options.push({ value: current, label: `${current} (unknown)` });
+  const cabling = selectField({ label: 'Status infra cabeada', value: current, options });
 
   const users = portsUsingPatch(doc, patch);
   const usedBy = users.length
@@ -50,19 +45,16 @@ export function openCellEditor(rackId, panel, port) {
     : h('p', { class: 'muted' }, 'No device port points at this patch. Set "Patch panel" on a port to connect it.');
 
   const save = () => {
+    const place = Object.fromEntries(deskFields.map(({ key, ui }) => [key, ui.input.value.trim()]));
     mutate((d) => {
       setCell(findRack(d, rackId), panel, port, { ...getCell(rack, panel, port), state: stateField.input.value, note: note.input.value.trim() });
-      const kept = d.endpoints.filter((e) => e.patch !== patch);
-      const edited = rows
-        .map((r) => Object.fromEntries(Object.entries(r.values).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])))
-        .filter((v) => ENDPOINT_FIELDS.some((f) => v[f.key]))
-        .map((v) => ({ ...v, patch }));
-      d.endpoints = [...kept, ...edited];
+      setDesk(d, patch, { ...place, cabling: cabling.input.value });
     });
     closeDrawer();
     toast(`${patch} saved`, { kind: 'ok', timeout: 2000 });
   };
 
+  const [setor, mesa, baia, letra] = deskFields.map((f) => f.ui.el);
   openDrawer({
     kicker: rack.name,
     title: patch,
@@ -72,10 +64,11 @@ export function openCellEditor(rackId, panel, port) {
       note.el,
       h('h3', { class: 'section-title' }, 'Device ports using it'),
       usedBy,
-      h('h3', { class: 'section-title' }, 'Desks'),
-      list,
-      h('button', { type: 'button', class: 'btn ghost small', onclick: () => { rows.push({ values: { patch } }); renderRows(); } },
-        icon(ICONS.plus, 14), 'Add desk'),
+      h('h3', { class: 'section-title' }, 'Desk'),
+      h('p', { class: 'muted hint' }, 'The physical place this position leads to. One per position.'),
+      h('div', { class: 'field-grid two' }, setor, mesa),
+      h('div', { class: 'field-grid two' }, baia, letra),
+      cabling.el,
     ],
     footer: [
       h('div', { class: 'foot-left' }),

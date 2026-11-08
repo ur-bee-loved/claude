@@ -63,6 +63,7 @@ export const ICONS = {
   star: 'M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z',
   rack: 'M4 3h16v18H4z M4 8h16 M4 13h16 M4 18h16',
   chevron: 'M9 6l6 6-6 6',
+  grip: 'M8 5h2v2H8z M14 5h2v2h-2z M8 11h2v2H8z M14 11h2v2h-2z M8 17h2v2H8z M14 17h2v2h-2z',
   expand: 'M7 10l5 5 5-5 M7 4l5 5 5-5',
   collapse: 'M7 14l5-5 5 5 M7 20l5-5 5 5',
   list: 'M9 6h11 M9 12h11 M9 18h11 M4 6h.01 M4 12h.01 M4 18h.01',
