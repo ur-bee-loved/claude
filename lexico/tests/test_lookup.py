@@ -106,3 +106,9 @@ def test_declension_tables_not_stored(db):
 def test_other_forms_prefers_entry_with_forms(db):
     out = render.run(db, "formas", "falar", "pt")
     assert "Flexões: falar, falado (particípio), falando (gerúndio), falo (1ª pres.)" in out
+
+
+def test_english_adjective_plural_gloss(db):
+    out = render.run(db, "adjetivo", "river", "en")
+    assert "Riverine" in out.splitlines()[0]
+    assert "turgid" not in out

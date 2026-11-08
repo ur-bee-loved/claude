@@ -264,7 +264,8 @@ def other_forms(db, word: str, lang: str | None = None) -> str:
     derived = []
     for e in query.lemma_entries(db, entry["word"], lang):
         derived += [r["word"] + marks(r["tags"]) for r in query.relations(db, e["id"], "derived")]
-    lines.append(f"Derivadas: {', '.join(list(dict.fromkeys(derived))[:15]) if derived else '—'}")
+    derived = sorted(dict.fromkeys(derived), key=lambda w: " " in w)
+    lines.append(f"Derivadas: {', '.join(derived[:15]) if derived else '—'}")
     o = origin(db, entry["word"], lang)
     lines.append(f"Radical: {o or '—'}")
     cog = []

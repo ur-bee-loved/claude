@@ -34,10 +34,10 @@ PT_RELATIONAL = re.compile(
     re.IGNORECASE,
 )
 PROPER_NEXT = re.compile(r"\s+(?:d[aeo]s?\s+)?[A-ZÀ-Ý]")
+SYLLABLE_SEP = re.compile(r"[‧·.]")
 EN_RELATIONAL = re.compile(
-    r"(?:^|\()\s*(?:of|relating to|pertaining to)"
-    r"(?:,?\s*(?:or\s+)?(?:relating|pertaining|belonging)\s+to)?"
-    r"(?:,?\s*or\s+\w+(?:\s+\w+)?)?"
+    r"(?:^|\()\s*(?:of,?\s+(?:or\s+)?)?(?:relating|pertaining|belonging|concerning)\s+to"
+    r"(?:,?\s*or\s+\w+(?:\s+\w+)?,?)?"
     r"\s+(?:an?\s+|the\s+)?([a-z][a-z-]+)",
     re.IGNORECASE,
 )
@@ -69,10 +69,10 @@ def records(path: str, stats: dict):
 def syllables_of(rec: dict) -> str | None:
     hy = rec.get("hyphenations")
     if hy and isinstance(hy, list) and hy[0].get("parts"):
-        return "-".join(hy[0]["parts"])
+        return SYLLABLE_SEP.sub("-", "-".join(hy[0]["parts"]))
     old = rec.get("hyphenation")
     if old and isinstance(old, list) and isinstance(old[0], str):
-        return old[0].replace("‧", "-").replace("·", "-")
+        return SYLLABLE_SEP.sub("-", old[0])
     for f in rec.get("forms") or []:
         if "canonical" in (f.get("tags") or []) and "." in f.get("form", ""):
             return f["form"].replace(".", "-")

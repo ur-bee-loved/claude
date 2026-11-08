@@ -23,3 +23,8 @@
 {"word": "-s-", "pos": "interfix", "lang_code": "de", "senses": [{"glosses": ["linking element"]}]}
 {"word": "falar", "pos": "noun", "lang_code": "pt", "senses": [{"glosses": ["speech, way of speaking"]}], "forms": [{"form": "falares", "tags": ["plural"]}]}
 {"word": "falar", "pos": "verb", "lang_code": "pt", "senses": [{"glosses": ["to speak"]}], "forms": [{"form": "falo", "tags": ["first-person", "present", "singular"]}, {"form": "falado", "tags": ["participle", "past"]}, {"form": "falando", "tags": ["gerund"]}]}
+{"word": "river", "pos": "noun", "lang_code": "en", "senses": [{"glosses": ["a large stream of water"]}]}
+{"word": "riverine", "pos": "adj", "lang_code": "en", "senses": [{"glosses": ["Of or pertaining to rivers, or located on or by a river."]}]}
+{"word": "deltaic", "pos": "adj", "lang_code": "en", "senses": [{"glosses": ["Of, relating to, or resembling a river delta."]}]}
+{"word": "turgid", "pos": "adj", "lang_code": "en", "senses": [{"glosses": ["Of a river, inundated with excess water; swollen."]}]}
+{"word": "desafortunadamente", "pos": "adv", "lang_code": "es", "hyphenations": [{"parts": ["De‧sa‧for‧tu‧na‧da‧men‧te"]}], "senses": [{"glosses": ["unfortunately"]}]}

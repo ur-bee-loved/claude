@@ -5,7 +5,7 @@ from lexico.build import clean_etymology, ety_part, strip_tree_tail
 
 def test_only_listed_languages_are_loaded(db):
     langs = {r[0] for r in db.execute("SELECT DISTINCT lang FROM entry")}
-    assert langs == {"pt", "es", "de"}
+    assert langs == {"pt", "es", "de", "en"}
 
 
 def test_ety_af_parts_and_inline_gloss(db):
@@ -89,3 +89,14 @@ def test_meta_records_sources(db):
     meta = dict(db.execute("SELECT key, value FROM meta").fetchall())
     assert "en.wiktionary:en.jsonl" in meta["sources"]
     assert "user:radicais.md" in meta["sources"]
+
+
+def test_english_relational_needs_relating_to(db):
+    adjs = {r[0] for r in db.execute("SELECT adjective FROM adjective_of WHERE lang='en'")}
+    assert {"riverine", "deltaic"} <= adjs
+    assert "turgid" not in adjs
+
+
+def test_syllable_separator_normalised(db):
+    syl = db.execute("SELECT syllables FROM entry WHERE word='desafortunadamente'").fetchone()[0]
+    assert syl == "De-sa-for-tu-na-da-men-te"

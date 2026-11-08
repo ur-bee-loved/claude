@@ -126,6 +126,8 @@ def adjectives_for(db, noun: str, lang: str) -> list[dict]:
             seen.add(k)
 
     keys = {key(noun)}
+    if lang == "en" and not noun.endswith("s"):
+        keys.add(key(noun) + "s")
     for e in lemma_entries(db, noun, lang):
         for f in forms(db, e["id"]):
             if "plural" in f["tags"].split():
@@ -148,6 +150,7 @@ def adjectives_for(db, noun: str, lang: str) -> list[dict]:
                     m = _EN_HEAD.match(s["gloss"])
                     if m:
                         en_heads.add(key(m.group(1)))
+    en_heads |= {h + "s" for h in en_heads if not h.endswith("s")}
     en_heads -= keys
     if en_heads:
         marks = ",".join("?" * len(en_heads))

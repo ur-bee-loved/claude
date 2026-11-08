@@ -51,6 +51,11 @@ Measured in the cloud container used for development, not on a laptop:
 |---|---|---|---|
 | pt | 30 s | 21 MB | 207 MB |
 | pt + de | 54 s | not measured | 365 MB |
+| pt, es, de, fr, en | 191 s | 39 MB | 1.25 GB |
+
+The five-language database holds 3.7 million entries. It fits on any SD card
+that holds Raspberry Pi OS; to make it smaller, fetch and build fewer
+languages (English alone is about half of the input).
 
 ### Raspberry Pi: copy and run
 
@@ -76,9 +81,10 @@ The unit assumes user `pi` and the folder `/home/pi/lexico`; edit it if
 yours differ. The page is at `http://<pi>:8080/`, and `/txt?w=anjo&m=formas&l=pt`
 returns plain text for `curl`. There is no authentication: keep it on the LAN.
 
-Query speed was 0 to 4 ms per lookup on the development machine. It has not been
-measured on a Pi; expect it to be several times slower, which should still be
-well under a second.
+Lookups averaged 1.1 ms on the five-language database on the development
+machine. It has not been measured on a Pi; expect it to be several times
+slower, which should still be well under a second. The first query after boot
+will be slower while the SD card is read.
 
 ## Sources
 
@@ -138,6 +144,12 @@ These showed up only when the code ran against the real extracts (November 2026)
   is now tried first.
 - Gloss patterns like "relativo a Rio Maior" produce place-name adjectives; a
   capitalised word after the noun is skipped.
+- English glosses use "Of a river, ..." to mean "said of rivers" (*turgid*,
+  *up*), so only "relating / pertaining / belonging / concerning to" counts.
+  The capture is still one word, so "relating to a river delta" (*deltaic*) is
+  listed under *river*.
+- Some Spanish records store the syllable split as one string with `‧`;
+  separators are normalised to hyphens.
 - Full German adjective declension tables account for millions of form rows;
   only the forms mode 4 uses are kept by default.
 
