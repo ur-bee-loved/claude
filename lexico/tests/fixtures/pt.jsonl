@@ -5,3 +5,5 @@
 {"word": "renano", "pos": "adj", "lang_code": "pt", "senses": [{"glosses": ["referente ao rio Reno"]}]}
 {"word": "hematopoese", "pos": "noun", "lang_code": "pt", "forms": [{"form": "he.ma.to.po.e.se", "tags": ["canonical"]}], "etymology_texts": ["Do grego antigo, haima (sangue) + poiesis (fazer)."], "senses": [{"glosses": ["formação do sangue"]}]}
 {"word": "manga", "pos": "noun", "lang_code": "pt", "etymology_texts": ["De 1 (fruta): do malaiala മാങ്ങ (māṅṅa)", "De 2 (vestuário): do latim manica"], "senses": [{"glosses": ["fruto tropical, doce e comestível da mangueira"]}, {"glosses": ["peça de vestuário que cobre o braço"]}]}
+{"word": "cardiovascular", "pos": "adj", "lang_code": "pt", "senses": [{"glosses": ["relativo ao coração e aos vasos sanguíneos"]}]}
+{"word": "cardíaco", "pos": "adj", "lang_code": "pt", "senses": [{"glosses": ["relativo ao coração"]}]}

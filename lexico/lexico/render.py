@@ -125,6 +125,10 @@ def deconstruct(db, word: str, lang: str | None = None) -> str:
     lines.append(f"Definição: {gloss_line(best_gloss(db, entry['word'], lang))}")
     if entry["etymology"]:
         lines.append(f"Etimologia: {entry['etymology']} (en)")
+    elif entry["source"] == "pt":
+        for i, (n, text) in enumerate(query.english_etymologies(db, entry), 1):
+            lines.append(f"Etimologia {n or i}: {text} (en)")
+            used.append("en.wiktionary")
     if entry["etymology_pt"]:
         lines.append(f"Etimologia (pt.wiktionary): {entry['etymology_pt']}")
         used.append("pt.wiktionary")
@@ -247,7 +251,8 @@ def other_forms(db, word: str, lang: str | None = None) -> str:
     entry, form_entry = lemma_of(db, word, lang)
     candidates = query.lemma_entries(db, entry["word"], lang)
     if len(candidates) > 1:
-        entry = max(candidates, key=lambda e: len(query.forms(db, e["id"])))
+        with_forms = [e for e in candidates if query.forms(db, e["id"])] or candidates
+        entry = max(with_forms, key=lambda e: (len(query.senses(db, e["id"])), len(query.forms(db, e["id"]))))
     lines = [f'Outras formas de "{entry["word"]}"']
     if form_entry is not None:
         lines.insert(0, f'"{word}" é forma flexionada de "{entry["word"]}".')
@@ -275,7 +280,12 @@ def other_forms(db, word: str, lang: str | None = None) -> str:
         cog += [f"{r['lang']} {r['word']}" for r in query.relations(db, e["id"], "cognate")
                 if r["lang"] in LANGS and r["lang"] != lang]
     if cog:
-        lines.append(f"Cognatos: {', '.join(dict.fromkeys(cog))}")
+        seen, unique = set(), []
+        for c in cog:
+            if c.lower() not in seen:
+                seen.add(c.lower())
+                unique.append(c)
+        lines.append(f"Cognatos: {', '.join(unique)}")
     if any(a["via"] == "en-gloss" for a in adjs):
         lines.append("(?) = adjetivo achado pela glosa inglesa; conferir.")
     lines.append(source_line(db, [f"{entry['source']}.wiktionary"]))

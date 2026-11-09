@@ -32,3 +32,11 @@
 {"word": "manga", "pos": "noun", "lang_code": "pt", "hyphenations": [{"parts": ["man", "ga"]}], "etymology_number": "2", "etymology_text": "From Malayalam മാങ്ങ (māṅṅa).", "senses": [{"glosses": ["mango (fruit)"]}]}
 {"word": "alcaic", "pos": "adj", "lang_code": "en", "senses": [{"glosses": ["Of or pertaining to a type of verse invented by Alcaeus."]}]}
 {"word": "bonito", "pos": "adj", "lang_code": "pt", "senses": [{"glosses": ["pretty"]}], "forms": [{"form": "bonito", "tags": ["masculine", "singular"]}, {"form": "bonita", "tags": ["feminine", "singular"]}, {"form": "bonitos", "tags": ["masculine", "plural"]}]}
+{"word": "cardiac", "pos": "adj", "lang_code": "en", "senses": [{"glosses": ["Pertaining to the heart."]}]}
+{"word": "cardiohepatic", "pos": "adj", "lang_code": "en", "senses": [{"glosses": ["Relating to the heart and the liver."]}]}
+{"word": "oromaxillofacial", "pos": "adj", "lang_code": "en", "senses": [{"glosses": ["Relating to the mouth, jaw, and face."]}]}
+{"word": "angel", "pos": "noun", "lang_code": "en", "senses": [{"glosses": ["a spiritual being"]}, {"glosses": ["a kind person"]}, {"glosses": ["a financial backer"]}], "forms": [{"form": "angels", "tags": ["plural"]}]}
+{"word": "angel", "pos": "verb", "lang_code": "en", "senses": [{"glosses": ["to back financially"]}], "forms": [{"form": "angeled", "tags": ["participle", "past"]}, {"form": "angeling", "tags": ["gerund"]}, {"form": "angels", "tags": ["first-person", "singular", "present"]}]}
+{"word": "angelic", "pos": "adj", "lang_code": "en", "senses": [{"glosses": ["Belonging to, or proceeding from, angels."]}]}
+{"word": "good", "pos": "adj", "lang_code": "en", "senses": [{"glosses": ["positive"]}], "etymology_templates": [{"name": "cog", "args": {"1": "de", "2": "Gut"}}, {"name": "cog", "args": {"1": "de", "2": "gut"}}]}
+{"word": "oropharyngoesophageal", "pos": "adj", "lang_code": "en", "senses": [{"glosses": ["Of or relating to the mouth, the pharynx and the esophagus."]}]}

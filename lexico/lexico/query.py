@@ -58,6 +58,15 @@ def find_entries(db, word: str, lang: str | None = None, pos: str | None = None)
     return lower or rows
 
 
+def english_etymologies(db, entry) -> list[tuple[int, str]]:
+    rows = db.execute(
+        "SELECT etym_no, etymology FROM entry WHERE lang=? AND word=? AND pos=? AND source='en' AND is_form=0"
+        " AND etymology IS NOT NULL ORDER BY etym_no, id",
+        (entry["lang"], entry["word"], entry["pos"]),
+    ).fetchall()
+    return [(r["etym_no"], r["etymology"]) for r in rows]
+
+
 def senses(db, entry_id: int) -> list[sqlite3.Row]:
     return db.execute(
         "SELECT gloss, gloss_lang, tags FROM sense WHERE entry_id=? ORDER BY gloss_lang<>'pt', n", (entry_id,)

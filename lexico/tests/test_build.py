@@ -160,3 +160,14 @@ def test_database_without_schema_version_is_refused(tmp_path):
     conn.close()
     with pytest.raises(query.SchemaMismatch, match="rebuild"):
         query.connect(old)
+
+
+def test_coordinated_nouns_are_not_adjective_links(db):
+    en = {r[0] for r in db.execute("SELECT adjective FROM adjective_of WHERE lang='en' AND noun_key='heart'")}
+    assert en == {"cardiac"}
+    n = db.execute(
+        "SELECT COUNT(*) FROM adjective_of WHERE adjective IN ('oromaxillofacial', 'oropharyngoesophageal')"
+    ).fetchone()[0]
+    assert n == 0
+    pt = {r[0] for r in db.execute("SELECT adjective FROM adjective_of WHERE lang='pt' AND noun_key='coracao'")}
+    assert pt == {"cardíaco"}

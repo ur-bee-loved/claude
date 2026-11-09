@@ -11,7 +11,7 @@ LANG_NAMES = {
     "la-lat": "lat. tardio", "la-med": "lat. medieval", "la-vul": "lat. vulgar", "la-new": "lat. moderno",
     "grc": "gr.", "el": "gr. moderno", "gem-pro": "protogermânico", "gmw-pro": "protogermânico ocidental", "goh": "alto-alemão antigo",
     "gmh": "alto-alemão médio", "ine-pro": "protoindo-europeu", "fro": "fr. antigo", "frm": "fr. médio",
-    "roa-opt": "galego-português", "osp": "esp. antigo", "ang": "inglês antigo", "enm": "inglês médio",
+    "roa-opt": "galego-português", "osp": "esp. antigo", "ang": "inglês antigo", "enm": "inglês médio", "non": "nórdico antigo",
     "ar": "árabe", "it": "it.", "gl": "galego", "ca": "catalão", "nl": "neerlandês", "tl": "tagalo",
     "tpw": "tupi antigo", "itc-pro": "protoitálico", "xno": "anglo-normando", "frk": "frâncico",
 }

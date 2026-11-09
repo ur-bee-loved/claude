@@ -36,6 +36,7 @@ PT_RELATIONAL = re.compile(
 )
 PROPER_NEXT = re.compile(r"\s+(?:d[aeo]s?\s+)?[A-ZÀ-Ý]")
 GENERIC_HEADS = {"type", "kind", "sort", "variety"}
+COORDINATED = re.compile(r"(?:,\s*(?:an?\s+|the\s+)?[\w-]+)*,?\s+(?:and|e)\s+")
 SYLLABLE_SEP = re.compile(r"[‧·.]")
 EN_RELATIONAL = re.compile(
     r"(?:^|\()\s*(?:of,?\s+(?:or\s+)?)?(?:relating|pertaining|belonging|concerning)\s+to"
@@ -388,7 +389,7 @@ class Builder:
                 continue
             g = gloss_text(s)
             m = pattern.search(g)
-            if not m or m.group(1)[:1].isupper() or PROPER_NEXT.match(g, m.end()):
+            if not m or m.group(1)[:1].isupper() or PROPER_NEXT.match(g, m.end()) or COORDINATED.match(g, m.end()):
                 continue
             noun = key(m.group(1))
             if noun in seen or noun in GENERIC_HEADS:

@@ -160,6 +160,14 @@ These showed up only when the code ran against the real extracts (November 2026)
   side has a single entry. Otherwise it stays a separate `pt` entry, with its
   own glosses and etymology, and takes the syllable split only if every English
   entry agrees on it. About 2,000 Portuguese records are kept apart this way.
+  `desconstruir` then prints each English etymology as `Etimologia N:`.
+- Glosses that relate two nouns ("relating to the heart and the liver", "the
+  mouth, jaw, and face") are not adjective links for the first noun; the
+  English list for *mouth* went from 32 adjectives to 4. A gloss like "relating
+  to heart surgery" still lands under *heart* (the capture is one word).
+- `formas` picks the main entry of a word with several parts of speech by
+  number of senses, then of forms (*angel*: noun, not the verb *to angel*).
+- Cognates that differ only by case (*Gut* / *gut*) are listed once.
 - Gloss patterns whose captured noun is a generic head (*type*, *kind*, *sort*,
   *variety*) are dropped: "pertaining to a type of verse" made *alcaic* an
   adjective of every noun glossed "a type of ...".

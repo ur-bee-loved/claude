@@ -2,6 +2,7 @@ import pytest
 
 from lexico import query, render
 from lexico.segment import segment
+from lexico.text import lang_name
 
 
 def test_exact_spelling_wins_over_accent_free_key(db):
@@ -119,9 +120,33 @@ def test_inflections_do_not_repeat_the_lemma(db):
     assert "Flexões: bonito, bonita, bonitos" in out
 
 
-def test_deconstruct_with_several_etymologies_does_not_mix_sources(db):
-    out = render.run(db, "desconstruir", "manga", "pt")
-    assert out.splitlines()[0] == "Man-ga"
-    assert "Definição: fruto tropical" in out
-    assert "Etimologia:" not in out and "Inherited" not in out
-    assert "Etimologia (pt.wiktionary): De 1 (fruta)" in out
+def test_deconstruct_with_several_etymologies_numbers_them(db):
+    out = render.run(db, "desconstruir", "manga", "pt").splitlines()
+    assert out[0] == "Man-ga"
+    assert "Definição: fruto tropical, doce e comestível da mangueira" in out
+    assert "Etimologia 1: Inherited from Old Galician-Portuguese manga, from Latin manica. (en)" in out
+    assert "Etimologia 2: From Malayalam മാങ്ങ (māṅṅa). (en)" in out
+    assert not any(line.startswith("Etimologia:") for line in out)
+    assert "Etimologia (pt.wiktionary): De 1 (fruta): do malaiala മാങ്ങ (māṅṅa) De 2 (vestuário): do latim manica" in out
+    assert "en.wiktionary" in out[-1] and "pt.wiktionary" in out[-1]
+
+
+def test_adjective_skips_glosses_that_relate_two_nouns(db):
+    first = render.run(db, "adjetivo", "heart", "en").splitlines()[0]
+    assert first == "heart -> Cardiac"
+    assert "Oromaxillofacial" not in render.run(db, "adjetivo", "mouth", "en")
+
+
+def test_other_forms_picks_the_main_part_of_speech(db):
+    out = render.run(db, "formas", "angel", "en").splitlines()
+    assert "Flexões: angel, angels" in out
+    assert "Adjetivo: angelic (?)" in out
+
+
+def test_cognates_ignore_case_duplicates(db):
+    out = render.run(db, "formas", "good", "en").splitlines()
+    assert "Cognatos: de Gut" in out
+
+
+def test_old_norse_has_a_name():
+    assert lang_name("non") == "nórdico antigo"
