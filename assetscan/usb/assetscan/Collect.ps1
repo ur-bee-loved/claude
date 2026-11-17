@@ -3,8 +3,9 @@
     Collects hardware and installed software of this computer onto the USB drive.
 .DESCRIPTION
     Each run is saved in <DataDir>\runs\<UTC time>_<HOST>_<machine key>\ (meta.json, details.json,
-    hardware.csv, software.csv, run.log), then <DataDir>\hardware.csv and software.csv are rebuilt
-    with the latest run of every machine collected so far.
+    hardware.csv, software.csv, software_detail.csv, run.log), then <DataDir>\hardware.csv,
+    software.csv and software_detail.csv are rebuilt with the latest run of every machine.
+    -NoMerge skips that rebuild, for many computers writing to one network share at once.
 #>
 [CmdletBinding()]
 param(
@@ -12,7 +13,8 @@ param(
     [switch]$NoPrompt,
     [string]$AssetId,
     [string]$Department,
-    [string]$Location
+    [string]$Location,
+    [switch]$NoMerge
 )
 
 $ErrorActionPreference = 'Continue'
@@ -57,7 +59,7 @@ $identity = Get-MachineIdentity -BiosSerial (Get-Prop $bios 'SerialNumber') `
 Write-Log "Machine key: $($identity.Key)"
 
 $previous = $null
-$prior = @(Read-RunMetas -DataDirs $DataDir | Where-Object { $_.machine_key -eq $identity.Key })
+$prior = @(Read-RunMetas -DataDirs $DataDir -Key $identity.Key | Where-Object { $_.machine_key -eq $identity.Key })
 if ($prior.Count) {
     $previous = @(Merge-Runs $prior)[0].hardware
     Write-Log "Collected before: $($prior.Count) run(s) on this drive"
@@ -125,6 +127,7 @@ if ($build) { $osText = "$osText (build $build, $arch)" }
 $userId = ConvertTo-CleanText (Get-Prop $cs 'UserName')
 if ($userId -eq '') { $userId = $env:USERNAME }
 $userId = $userId.Split('\')[-1]
+if ($userId.EndsWith('$')) { $userId = '' }
 
 $manufacturer = ConvertTo-CleanText (Get-Prop $cs 'Manufacturer')
 $rawModel = ConvertTo-CleanText (Get-Prop $cs 'Model')
@@ -197,11 +200,15 @@ try {
     exit 1
 }
 
-try {
-    $r = Update-MasterFiles -DataDirs $DataDir -OutDir $DataDir
-    Write-Log "Updated hardware.csv and software.csv: $($r.Machines) machine(s), $($r.Runs) run(s)"
-} catch {
-    Write-Log "Run saved, but the combined CSVs were not updated (open in Excel?): $($_.Exception.Message)" 'ERROR'
+if ($NoMerge) {
+    Write-Log 'NoMerge: combined CSVs not rebuilt, run Export.ps1 later'
+} else {
+    try {
+        $r = Update-MasterFiles -DataDirs $DataDir -OutDir $DataDir
+        Write-Log "Updated hardware.csv and software.csv: $($r.Machines) machine(s), $($r.Runs) run(s)"
+    } catch {
+        Write-Log "Run saved, but the combined CSVs were not updated (open in Excel?): $($_.Exception.Message)" 'ERROR'
+    }
 }
 
 $summary = '{0}  {1,-15}  {2,-20}  {3,4} programs  {4} warning(s)  {5}' -f `

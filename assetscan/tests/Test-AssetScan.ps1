@@ -139,10 +139,19 @@ try {
     Assert-Equal 'TI' $hw[1].department 'department from latest run'
     Assert-Equal 'new' $hw[1].os 'collected fields from latest run'
 
-    $sw = @(Import-Csv -LiteralPath (Join-Path $out 'software.csv') -Encoding UTF8)
-    Assert-Equal ($script:SoftwareColumns -join ',') (($sw[0].PSObject.Properties | ForEach-Object { $_.Name }) -join ',') 'software header'
+    $sw = @(Import-Csv -LiteralPath (Join-Path $out 'software_detail.csv') -Encoding UTF8)
+    Assert-Equal ($script:SoftwareColumns -join ',') (($sw[0].PSObject.Properties | ForEach-Object { $_.Name }) -join ',') 'software detail header'
     Assert-Equal 'App A,App B' (($sw | ForEach-Object { $_.name }) -join ',') 'software of latest run'
     Assert-Equal 'TAG-1' $sw[0].asset_id 'software asset_id follows merged hardware'
+
+    $sheet = [IO.File]::ReadAllLines((Join-Path $out 'software.csv'))
+    Assert-Equal '" asset_id","title","publisher","version","department","usage","url","is_paid","licenses","internal_support_status","last_log_change"' $sheet[0] 'software header matches the sheet'
+    Assert-Equal '"TAG-1","App A","","1.0","TI","","","","","","2026-02-01T10:00:00Z"' $sheet[1] 'software sheet row: asset_id and department from merged hardware'
+    Assert-Equal 3 $sheet.Count 'software sheet rows'
+    $runSheet = [IO.File]::ReadAllLines((Join-Path $data 'runs/20260201T100000Z_PC-B_SN-AAA/software.csv'))
+    Assert-Equal '"","App A","","1.0","TI","","","","","","2026-02-01T10:00:00Z"' $runSheet[1] 'per-run software sheet uses that run only'
+
+    Assert-Equal 2 @(Read-RunMetas -DataDirs $data -Key 'SN-AAA').Count 'read metas filtered by machine key'
 
     $hist = [IO.File]::ReadAllLines((Join-Path $out 'hardware_history.csv'))
     Assert-Equal 4 $hist.Count 'history has every run'

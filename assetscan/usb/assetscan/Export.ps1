@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Builds hardware.csv and software.csv (latest run per machine) from one or more data folders.
+    Builds hardware.csv, software.csv and software_detail.csv (latest run per machine) from one or more data folders.
 .EXAMPLE
     .\Export.ps1
 .EXAMPLE

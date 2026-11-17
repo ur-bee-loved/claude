@@ -25,6 +25,24 @@ $script:HardwareHeaders = [ordered]@{
     last_log_change     = 'last_log_change'
 }
 
+# Internal field name -> column header in the asset_manager_v3 software sheet.
+# The sheet's header really is " asset_id", with a leading space.
+$script:SoftwareHeaders = [ordered]@{
+    asset_id                = ' asset_id'
+    title                   = 'title'
+    publisher               = 'publisher'
+    version                 = 'version'
+    department              = 'department'
+    usage                   = 'usage'
+    url                     = 'url'
+    is_paid                 = 'is_paid'
+    licenses                = 'licenses'
+    internal_support_status = 'internal_support_status'
+    last_log_change         = 'last_log_change'
+}
+
+# Per-machine detail kept next to the sheet file, so programs can be tied to a
+# machine even when asset_id is still blank.
 $script:SoftwareColumns = @(
     'asset_id', 'hostname', 'serial_number', 'name', 'version', 'publisher',
     'install_date', 'architecture', 'scope', 'source', 'install_location', 'last_log_change'
@@ -303,6 +321,19 @@ function New-SoftwareRecord {
     return [pscustomobject]$o
 }
 
+function ConvertTo-SoftwareSheetRecord {
+    param($Detail, $Hardware)
+    $o = [ordered]@{}
+    foreach ($k in $script:SoftwareHeaders.Keys) { $o[$script:SoftwareHeaders[$k]] = '' }
+    $o[$script:SoftwareHeaders['asset_id']] = [string](Get-Prop $Hardware 'asset_id')
+    $o['title'] = [string](Get-Prop $Detail 'name')
+    $o['publisher'] = [string](Get-Prop $Detail 'publisher')
+    $o['version'] = [string](Get-Prop $Detail 'version')
+    $o['department'] = [string](Get-Prop $Hardware 'department')
+    $o['last_log_change'] = [string](Get-Prop $Detail 'last_log_change')
+    return [pscustomobject]$o
+}
+
 function ConvertTo-HardwareRecord {
     param($Hardware)
     $o = [ordered]@{}
@@ -322,7 +353,7 @@ function Write-TextFileAtomic {
     param([string]$Path, [string[]]$Lines, [bool]$Bom = $true)
     $dir = Split-Path -Parent $Path
     if ($dir -and -not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
-    $tmp = "$Path.tmp"
+    $tmp = '{0}.{1}.tmp' -f $Path, [guid]::NewGuid().ToString('N').Substring(0, 8)
     [IO.File]::WriteAllLines($tmp, $Lines, (New-Object System.Text.UTF8Encoding($Bom)))
     if (Test-Path -LiteralPath $Path) {
         try {
@@ -371,15 +402,19 @@ function Save-RunFiles {
     if ($null -ne $Details) { Write-JsonFile -Path (Join-Path $RunDir 'details.json') -Object $Details -Depth 8 }
     $hwRecord = ConvertTo-HardwareRecord (Get-Prop $Meta 'hardware')
     Write-CsvFile -Path (Join-Path $RunDir 'hardware.csv') -Columns @($script:HardwareHeaders.Values) -Rows @($hwRecord)
-    Write-CsvFile -Path (Join-Path $RunDir 'software.csv') -Columns $script:SoftwareColumns -Rows $SoftwareRows
+    Write-CsvFile -Path (Join-Path $RunDir 'software_detail.csv') -Columns $script:SoftwareColumns -Rows $SoftwareRows
+    $sheetRows = @(foreach ($r in @($SoftwareRows)) { if ($null -ne $r) { ConvertTo-SoftwareSheetRecord -Detail $r -Hardware (Get-Prop $Meta 'hardware') } })
+    Write-CsvFile -Path (Join-Path $RunDir 'software.csv') -Columns @($script:SoftwareHeaders.Values) -Rows $sheetRows
 }
 
 function Read-RunMetas {
-    param([string[]]$DataDirs)
+    param([string[]]$DataDirs, [string]$Key)
     foreach ($dir in @($DataDirs)) {
         $runs = Join-Path $dir 'runs'
         if (-not (Test-Path -LiteralPath $runs)) { continue }
-        foreach ($f in @(Get-ChildItem -LiteralPath $runs -Directory | Where-Object { $_.Name -notlike '*.partial' })) {
+        $folders = @(Get-ChildItem -LiteralPath $runs -Directory | Where-Object { $_.Name -notlike '*.partial' })
+        if ($Key) { $folders = @($folders | Where-Object { $_.Name -like "*_$Key" }) }
+        foreach ($f in $folders) {
             $m = Read-JsonFile (Join-Path $f.FullName 'meta.json')
             if ($null -eq $m -or -not (Get-Prop $m 'machine_key')) { continue }
             $m | Add-Member -NotePropertyName run_dir -NotePropertyValue $f.FullName -Force
@@ -423,15 +458,18 @@ function Update-MasterFiles {
     Write-CsvFile -Path (Join-Path $OutDir 'hardware.csv') -Columns @($script:HardwareHeaders.Values) -Rows $hwRows -Delimiter $Delimiter
 
     $swRows = New-Object System.Collections.Generic.List[object]
+    $sheetRows = New-Object System.Collections.Generic.List[object]
     foreach ($m in $merged) {
-        $p = Join-Path $m.run_dir 'software.csv'
+        $p = Join-Path $m.run_dir 'software_detail.csv'
         if (-not (Test-Path -LiteralPath $p)) { continue }
         foreach ($r in @(Import-Csv -LiteralPath $p -Encoding UTF8)) {
             $r.asset_id = $m.hardware['asset_id']
             $swRows.Add($r)
+            $sheetRows.Add((ConvertTo-SoftwareSheetRecord -Detail $r -Hardware $m.hardware))
         }
     }
-    Write-CsvFile -Path (Join-Path $OutDir 'software.csv') -Columns $script:SoftwareColumns -Rows $swRows.ToArray() -Delimiter $Delimiter
+    Write-CsvFile -Path (Join-Path $OutDir 'software_detail.csv') -Columns $script:SoftwareColumns -Rows $swRows.ToArray() -Delimiter $Delimiter
+    Write-CsvFile -Path (Join-Path $OutDir 'software.csv') -Columns @($script:SoftwareHeaders.Values) -Rows $sheetRows.ToArray() -Delimiter $Delimiter
 
     if ($History) {
         $histRows = @($metas | Sort-Object -Property { $_.collected_utc } | ForEach-Object { ConvertTo-HardwareRecord $_.hardware })

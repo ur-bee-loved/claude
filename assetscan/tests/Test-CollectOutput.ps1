@@ -10,7 +10,7 @@ $runs = @(Get-ChildItem -LiteralPath (Join-Path $DataDir 'runs') -Directory)
 if ($runs.Count -ne $ExpectRuns) { $failures += "expected $ExpectRuns run folder(s), found $($runs.Count)" }
 foreach ($r in $runs) {
     if ($r.Name -like '*.partial') { $failures += "unfinished run left behind: $($r.Name)" }
-    foreach ($f in 'meta.json', 'details.json', 'hardware.csv', 'software.csv', 'run.log') {
+    foreach ($f in 'meta.json', 'details.json', 'hardware.csv', 'software.csv', 'software_detail.csv', 'run.log') {
         if (-not (Test-Path -LiteralPath (Join-Path $r.FullName $f))) { $failures += "$($r.Name) is missing $f" }
     }
 }
@@ -26,7 +26,10 @@ foreach ($c in 'os', 'manufacturer', 'model', 'type', 'user_id', 'last_log_chang
 if ($ExpectAssetId -and $hw.asset_id -ne $ExpectAssetId) { $failures += "asset_id '$($hw.asset_id)' is not '$ExpectAssetId'" }
 if (-not ($hw.mac_addr_eth -or $hw.mac_addr_wifi -or $hw.mac_addr_extra)) { $failures += 'no MAC address found' }
 
-$sw = @(Import-Csv -LiteralPath (Join-Path $DataDir 'software.csv') -Encoding UTF8)
+$sw = @(Import-Csv -LiteralPath (Join-Path $DataDir 'software_detail.csv') -Encoding UTF8)
+$sheet = @([IO.File]::ReadAllLines((Join-Path $DataDir 'software.csv')))
+if ($sheet[0] -ne '" asset_id","title","publisher","version","department","usage","url","is_paid","licenses","internal_support_status","last_log_change"') { $failures += "software.csv header is $($sheet[0])" }
+if ($sheet.Count - 1 -ne $sw.Count) { $failures += "software.csv has $($sheet.Count - 1) rows, software_detail.csv $($sw.Count)" }
 if ($sw.Count -lt 5) { $failures += "only $($sw.Count) program(s) found" }
 
 $hw.PSObject.Properties | ForEach-Object { '{0,-20} {1}' -f $_.Name, $_.Value } | Write-Host
