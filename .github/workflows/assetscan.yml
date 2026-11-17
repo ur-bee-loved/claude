@@ -1,0 +1,54 @@
+name: assetscan
+
+on:
+  push:
+    branches: [main]
+    paths: ["assetscan/**", ".github/workflows/assetscan.yml"]
+  pull_request:
+    paths: ["assetscan/**", ".github/workflows/assetscan.yml"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: assetscan
+
+jobs:
+  windows:
+    name: Windows (${{ matrix.shell }})
+    runs-on: windows-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit tests
+        shell: ${{ matrix.shell }}
+        run: ./tests/Test-AssetScan.ps1
+      - name: Collect twice on the runner
+        shell: ${{ matrix.shell }}
+        run: |
+          $d = Join-Path $env:RUNNER_TEMP 'data'
+          ./usb/assetscan/Collect.ps1 -NoPrompt -DataDir $d -AssetId CI-TEST-1 -Department IT
+          ./usb/assetscan/Collect.ps1 -NoPrompt -DataDir $d
+      - name: Check collected output
+        shell: ${{ matrix.shell }}
+        run: ./tests/Test-CollectOutput.ps1 -DataDir (Join-Path $env:RUNNER_TEMP 'data') -ExpectRuns 2 -ExpectAssetId CI-TEST-1
+      - name: Export
+        shell: ${{ matrix.shell }}
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'export'
+          ./usb/assetscan/Export.ps1 -DataDir (Join-Path $env:RUNNER_TEMP 'data') -OutDir $out -History
+          Get-Content (Join-Path $out 'hardware.csv')
+          if (-not (Test-Path (Join-Path $out 'hardware_history.csv'))) { exit 1 }
+      - name: Double-click launcher
+        if: matrix.shell == 'powershell'
+        shell: cmd
+        run: |
+          echo.| usb\RUN.cmd -NoPrompt -DataDir "%RUNNER_TEMP%\data-cmd"
+          if errorlevel 1 exit /b 1
+          if not exist "%RUNNER_TEMP%\data-cmd\hardware.csv" exit /b 1
