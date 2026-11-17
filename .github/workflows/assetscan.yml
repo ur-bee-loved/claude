@@ -33,8 +33,8 @@ jobs:
         shell: ${{ matrix.shell }}
         run: |
           $d = Join-Path $env:RUNNER_TEMP 'data'
-          ./usb/assetscan/Collect.ps1 -NoPrompt -DataDir $d -AssetId CI-TEST-1 -Department IT
-          ./usb/assetscan/Collect.ps1 -NoPrompt -DataDir $d
+          ./usb/assetscan/Collect.ps1 -NoPrompt -DataDir $d -AssetId CI-TEST-1 -Department IT -ConsentEmail ci@example.com
+          ./usb/assetscan/Collect.ps1 -NoPrompt -DataDir $d -ConsentEmail ci@example.com
       - name: Check collected output
         shell: ${{ matrix.shell }}
         run: ./tests/Test-CollectOutput.ps1 -DataDir (Join-Path $env:RUNNER_TEMP 'data') -ExpectRuns 2 -ExpectAssetId CI-TEST-1
@@ -49,20 +49,20 @@ jobs:
         if: matrix.shell == 'powershell'
         shell: cmd
         run: |
-          echo.| usb\RUN.cmd -NoPrompt -DataDir "%RUNNER_TEMP%\data-cmd"
+          echo.| usb\RUN.cmd -NoPrompt -ConsentEmail ci@example.com -DataDir "%RUNNER_TEMP%\data-cmd"
           if errorlevel 1 exit /b 1
           if not exist "%RUNNER_TEMP%\data-cmd\hardware.csv" exit /b 1
       - name: No-questions launcher
         if: matrix.shell == 'powershell'
         shell: cmd
         run: |
-          call usb\QUICK.cmd -DataDir "%RUNNER_TEMP%\data-quick" < nul
+          call usb\QUICK.cmd -ConsentEmail ci@example.com -DataDir "%RUNNER_TEMP%\data-quick" < nul
           if errorlevel 1 exit /b 1
           if not exist "%RUNNER_TEMP%\data-quick\software.csv" exit /b 1
       - name: Network-share mode (NoMerge)
         shell: ${{ matrix.shell }}
         run: |
           $d = Join-Path $env:RUNNER_TEMP 'data-nomerge'
-          ./usb/assetscan/Collect.ps1 -NoPrompt -NoMerge -DataDir $d
+          ./usb/assetscan/Collect.ps1 -NoPrompt -NoMerge -DataDir $d -ConsentEmail ci@example.com
           if (Test-Path (Join-Path $d 'hardware.csv')) { throw 'NoMerge still wrote hardware.csv' }
           ./usb/assetscan/Export.ps1 -DataDir $d -OutDir (Join-Path $env:RUNNER_TEMP 'export-nomerge')

@@ -48,6 +48,18 @@ $script:SoftwareColumns = @(
     'install_date', 'architecture', 'scope', 'source', 'install_location', 'last_log_change'
 )
 
+$script:ConsentColumns = @(
+    'asset_id', 'serial_number', 'hostname', 'user_id', 'email', 'accepted', 'consent_date', 'method', 'statement'
+)
+
+# Non-ASCII text is written with \u escapes because Windows PowerShell 5.1 reads
+# BOM-less script files in the ANSI code page.
+$script:ConsentTitle = [regex]::Unescape('Termo de ci\u00eancia')
+$script:ConsentStatement = [regex]::Unescape('Eu estou ciente de que algumas informa\u00e7\u00f5es do meu sistema ser\u00e3o coletadas visando a melhora de servi\u00e7os e organiza\u00e7\u00e3o de dados da Sensorweb')
+
+# Set to e.g. 'empresa.com.br' to accept only addresses of that domain.
+$script:ConsentEmailDomain = ''
+
 # Fields typed by the operator; a blank value in a newer run keeps the last non-blank one.
 $script:OperatorFields = @('asset_id', 'department', 'location')
 
@@ -334,6 +346,29 @@ function ConvertTo-SoftwareSheetRecord {
     return [pscustomobject]$o
 }
 
+function Test-CorporateEmail {
+    param([string]$Email, [string]$Domain = $script:ConsentEmailDomain)
+    $e = ConvertTo-CleanText $Email
+    if ($e -notmatch '^[^@\s]+@[^@\s]+\.[^@\s]+$') { return $false }
+    if ($Domain) { return $e.ToLowerInvariant().EndsWith('@' + $Domain.ToLowerInvariant()) }
+    return $true
+}
+
+function ConvertTo-ConsentRecord {
+    param($Meta, [string]$AssetId)
+    $c = Get-Prop $Meta 'consent'
+    if ($null -eq $c) { return }
+    $hw = Get-Prop $Meta 'hardware'
+    if (-not $PSBoundParameters.ContainsKey('AssetId')) { $AssetId = [string](Get-Prop $hw 'asset_id') }
+    $o = [ordered]@{}
+    $o['asset_id'] = $AssetId
+    $o['serial_number'] = [string](Get-Prop $hw 'serial_number')
+    $o['hostname'] = [string](Get-Prop $hw 'hostname')
+    $o['user_id'] = [string](Get-Prop $hw 'user_id')
+    foreach ($k in 'email', 'accepted', 'consent_date', 'method', 'statement') { $o[$k] = [string](Get-Prop $c $k) }
+    return [pscustomobject]$o
+}
+
 function ConvertTo-HardwareRecord {
     param($Hardware)
     $o = [ordered]@{}
@@ -399,6 +434,9 @@ function Save-RunFiles {
     param([string]$RunDir, $Meta, $Details, [object[]]$SoftwareRows)
     if (-not (Test-Path -LiteralPath $RunDir)) { New-Item -ItemType Directory -Force -Path $RunDir | Out-Null }
     Write-JsonFile -Path (Join-Path $RunDir 'meta.json') -Object $Meta
+    $consentRow = ConvertTo-ConsentRecord -Meta $Meta
+    if ($null -ne $consentRow) { Write-CsvFile -Path (Join-Path $RunDir 'consent.csv') -Columns $script:ConsentColumns -Rows @($consentRow) }
+    if (Get-Prop $Meta 'declined') { return }
     if ($null -ne $Details) { Write-JsonFile -Path (Join-Path $RunDir 'details.json') -Object $Details -Depth 8 }
     $hwRecord = ConvertTo-HardwareRecord (Get-Prop $Meta 'hardware')
     Write-CsvFile -Path (Join-Path $RunDir 'hardware.csv') -Columns @($script:HardwareHeaders.Values) -Rows @($hwRecord)
@@ -451,7 +489,8 @@ function Merge-Runs {
 function Update-MasterFiles {
     param([string[]]$DataDirs, [string]$OutDir, [string]$Delimiter = ',', [switch]$History)
     $metas = @(Read-RunMetas -DataDirs $DataDirs)
-    $merged = @(Merge-Runs $metas | Sort-Object -Property @{ Expression = { $_.hardware['hostname'] } }, machine_key)
+    $collected = @($metas | Where-Object { -not (Get-Prop $_ 'declined') })
+    $merged = @(Merge-Runs $collected | Sort-Object -Property @{ Expression = { $_.hardware['hostname'] } }, machine_key)
     if (-not (Test-Path -LiteralPath $OutDir)) { New-Item -ItemType Directory -Force -Path $OutDir | Out-Null }
 
     $hwRows = @(foreach ($m in $merged) { ConvertTo-HardwareRecord $m.hardware })
@@ -471,14 +510,26 @@ function Update-MasterFiles {
     Write-CsvFile -Path (Join-Path $OutDir 'software_detail.csv') -Columns $script:SoftwareColumns -Rows $swRows.ToArray() -Delimiter $Delimiter
     Write-CsvFile -Path (Join-Path $OutDir 'software.csv') -Columns @($script:SoftwareHeaders.Values) -Rows $sheetRows.ToArray() -Delimiter $Delimiter
 
+    $assetByKey = @{}
+    foreach ($m in $merged) { $assetByKey[$m.machine_key] = $m.hardware['asset_id'] }
+    $consentRows = @(foreach ($meta in @($metas | Sort-Object -Property { $_.collected_utc })) {
+        if ($assetByKey.ContainsKey([string]$meta.machine_key)) {
+            ConvertTo-ConsentRecord -Meta $meta -AssetId $assetByKey[[string]$meta.machine_key]
+        } else {
+            ConvertTo-ConsentRecord -Meta $meta
+        }
+    })
+    Write-CsvFile -Path (Join-Path $OutDir 'consent.csv') -Columns $script:ConsentColumns -Rows $consentRows -Delimiter $Delimiter
+
     if ($History) {
-        $histRows = @($metas | Sort-Object -Property { $_.collected_utc } | ForEach-Object { ConvertTo-HardwareRecord $_.hardware })
+        $histRows = @($collected | Sort-Object -Property { $_.collected_utc } | ForEach-Object { ConvertTo-HardwareRecord $_.hardware })
         Write-CsvFile -Path (Join-Path $OutDir 'hardware_history.csv') -Columns @($script:HardwareHeaders.Values) -Rows $histRows -Delimiter $Delimiter
     }
 
     return [pscustomobject]@{
         Machines     = $merged.Count
         Runs         = $metas.Count
+        Consents     = $consentRows.Count
         SoftwareRows = $swRows.Count
         OutDir       = $OutDir
     }
@@ -714,6 +765,65 @@ function Get-StoreApps {
         }
     }
     return $out
+}
+
+function Show-ConsentDialog {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    [System.Windows.Forms.Application]::EnableVisualStyles()
+
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = $script:ConsentTitle
+    $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
+    $form.MaximizeBox = $false
+    $form.MinimizeBox = $false
+    $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+    $form.TopMost = $true
+    $form.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+    $form.ClientSize = New-Object System.Drawing.Size(480, 230)
+
+    $statement = New-Object System.Windows.Forms.Label
+    $statement.Text = $script:ConsentStatement
+    $statement.Location = New-Object System.Drawing.Point(20, 20)
+    $statement.Size = New-Object System.Drawing.Size(440, 70)
+
+    $emailLabel = New-Object System.Windows.Forms.Label
+    $emailLabel.Text = 'E-mail corporativo:'
+    $emailLabel.Location = New-Object System.Drawing.Point(20, 100)
+    $emailLabel.AutoSize = $true
+
+    $email = New-Object System.Windows.Forms.TextBox
+    $email.Location = New-Object System.Drawing.Point(20, 125)
+    $email.Size = New-Object System.Drawing.Size(440, 26)
+
+    $accept = New-Object System.Windows.Forms.Button
+    $accept.Text = 'Aceitar'
+    $accept.Location = New-Object System.Drawing.Point(260, 180)
+    $accept.Size = New-Object System.Drawing.Size(95, 32)
+    $accept.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $accept.Enabled = $false
+
+    $decline = New-Object System.Windows.Forms.Button
+    $decline.Text = 'Recusar'
+    $decline.Location = New-Object System.Drawing.Point(365, 180)
+    $decline.Size = New-Object System.Drawing.Size(95, 32)
+    $decline.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+
+    $email.add_TextChanged({ $accept.Enabled = Test-CorporateEmail $email.Text })
+    $form.add_Shown({ $form.Activate(); $email.Focus() | Out-Null })
+    $form.Controls.AddRange(@($statement, $emailLabel, $email, $accept, $decline))
+    $form.AcceptButton = $accept
+    $form.CancelButton = $decline
+
+    try {
+        $result = $form.ShowDialog()
+        return [pscustomobject]@{
+            Accepted = ($result -eq [System.Windows.Forms.DialogResult]::OK)
+            Email    = ConvertTo-CleanText $email.Text
+        }
+    } finally {
+        $form.Dispose()
+    }
 }
 
 function Test-IsElevated {

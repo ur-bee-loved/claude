@@ -10,6 +10,8 @@ spreadsheets covering every machine collected so far:
 - `software_detail.csv` holds the same programs with hostname, serial number,
   install date and scope, so they can be matched to a machine even when
   `asset_id` is blank.
+- `consent.csv` holds one row per run with the user's corporate e-mail and
+  whether they accepted the consent window, linked to the device.
 
 It runs on Windows PowerShell 5.1, which is built into Windows 10 and 11, so nothing
 is installed on the computer being inventoried. It uses no admin rights and no
@@ -21,8 +23,8 @@ Copy the **contents** of `usb/` to the root of the USB drive:
 
 ```
 E:\
-  QUICK.cmd            double-click on each computer: no questions, closes itself
-  RUN.cmd              same, but asks for asset_id / department / location
+  QUICK.cmd            double-click on each computer: consent window only, closes itself
+  RUN.cmd              same, then asks for asset_id / department / location
   EXPORT.cmd           double-click to make a dated export copy
   assetscan\           the scripts
   assetscan-data\      created on first run
@@ -30,17 +32,23 @@ E:\
 
 ## Using it
 
-**Fastest:** plug the stick in, double-click `QUICK.cmd`, and unplug once the
-window closes itself. It asks nothing; `asset_id`, `department` and `location`
-keep their previous values (or the BIOS asset tag), and you fill the rest in
-the sheet later.
+Every run starts with a consent window (*Termo de ciência*). It shows the
+statement and a field for the user's corporate e-mail. **Aceitar** stays
+disabled until a valid e-mail is typed. **Recusar**, or closing the window,
+stops the run before anything is read from the computer (see
+[Consent](#consent)).
+
+**Fastest:** plug the stick in, double-click `QUICK.cmd`, and let the user
+accept the window. Unplug once the console window closes itself. It asks
+nothing else; `asset_id`, `department` and `location` keep their previous
+values (or the BIOS asset tag), and you fill the rest in the sheet later.
 
 **With questions:**
 
 1. Plug the stick in and double-click `RUN.cmd`. Windows does not autorun
    programs from USB drives (see [Why there is no autorun](#why-there-is-no-autorun)),
    so it must be started by hand.
-2. It asks for `asset_id`, `department` and `location`:
+2. After the consent window, it asks for `asset_id`, `department` and `location`:
    - Press Enter to keep the value shown in brackets. That value comes from the
      last time this machine was collected, or, for `asset_id`, from the BIOS
      asset tag if one is set.
@@ -48,7 +56,7 @@ the sheet later.
 3. It takes about 10–60 seconds, then prints a summary. Press a key to close.
 
 Repeat on every computer. To bring the data together, either take
-`E:\assetscan-data\hardware.csv` and `software.csv` directly (they are always up
+`E:\assetscan-data\hardware.csv`, `software.csv` and `consent.csv` directly (they are always up
 to date), or double-click `EXPORT.cmd` for a dated copy in
 `assetscan-data\export\<date>\`.
 
@@ -57,6 +65,7 @@ Command-line options (from PowerShell in `E:\assetscan`):
 ```powershell
 .\Collect.ps1 -NoPrompt                                  # unattended, keeps previous asset_id/department/location
 .\Collect.ps1 -AssetId PAT-0412 -Department TI -Location "Sala 3"
+.\Collect.ps1 -ConsentEmail maria@empresa.com.br         # consent given another way (paper, e-mail): no window, method=parameter
 .\Export.ps1 -DataDir E:\assetscan-data, F:\assetscan-data -OutDir C:\inventario   # merge several sticks
 .\Export.ps1 -Delimiter ';'                              # for Excel with a pt-BR/European list separator
 .\Export.ps1 -History                                    # also hardware_history.csv, one row per run
@@ -69,14 +78,17 @@ assetscan-data\
   hardware.csv              latest state of every machine (hardware sheet columns)
   software.csv              programs of every machine, from its latest run (software sheet columns)
   software_detail.csv       the same programs with hostname, serial, install date, scope
+  consent.csv               every consent answer, oldest first, linked to the device
   collections.log           one line per run
   runs\
     20261117T193300Z_PC-RH-04_SN-PF1ABCDE\      one folder per run: <UTC time>_<host>_<machine key>
+    20261117T201500Z_PC-RH-07_DECLINED\         a refused consent: meta.json, consent.csv, run.log only
       meta.json             the hardware row + run information (read by the merge)
       details.json          everything collected, in more detail than the sheet holds
       hardware.csv          this run only
       software.csv          this run only (software sheet columns)
       software_detail.csv   this run only (detail; read by the merge)
+      consent.csv           this run's consent answer
       run.log               what was queried, how long it took, what failed
 ```
 
@@ -170,54 +182,44 @@ no name. Microsoft Store apps of the current user are added with
 installs, and querying it makes Windows run a consistency check on every MSI
 package, which can trigger repairs.
 
-## Without the USB stick: domain computers
+## Consent
 
-If the computers are in an Active Directory domain, nobody has to visit them.
-A Group Policy *Immediate Task* runs the same collector once on every computer,
-as SYSTEM, the next time it refreshes policy (about 90 minutes, or at
-`gpupdate`). Each computer writes to a network share instead of the stick.
+The window appears before anything is read from the computer. Until the user
+answers, the only thing the run knows is the computer name, which Windows
+gives every program.
 
-1. Create two shares on a server:
+| Answer | What happens |
+|---|---|
+| **Aceitar** (valid e-mail typed) | Collection runs. One `consent.csv` row is written: `accepted=yes`, the e-mail, the date and time. |
+| **Recusar** or closing the window | Nothing is collected. One `consent.csv` row is written: `accepted=no`, hostname, date and time, with no e-mail. The run is left out of `hardware.csv` and `software.csv`. |
 
-   | Share | Contents | Permissions |
-   |---|---|---|
-   | `\\SERVER\assetscan$` | the `assetscan\` folder from `usb\` | Domain Computers: **Read only** |
-   | `\\SERVER\assetscan-data$` | empty | Domain Computers: **Modify** (NTFS and share) |
+`consent.csv` columns:
 
-   The script share must not be writable by the computers. A writable script
-   share would let any computer change code that every other computer runs as
-   SYSTEM.
-2. In a GPO linked to the computers' OU, go to *Computer Configuration →
-   Preferences → Control Panel Settings → Scheduled Tasks*. Add a new
-   *Immediate Task (At least Windows 7)*:
-   - User: `NT AUTHORITY\SYSTEM`, *Run with highest privileges*.
-   - Action, program: `powershell.exe`.
-   - Arguments:
+| Column | Content |
+|---|---|
+| asset_id | the device's `asset_id` after merging, so every consent row of a device follows the current value |
+| serial_number, hostname, user_id | from the hardware row of the same run; blank after a refusal, except hostname |
+| email | typed in the window |
+| accepted | `yes` / `no` |
+| consent_date | local date and time of the answer, `yyyy-MM-dd HH:mm:ss` |
+| method | `dialog` (the window) or `parameter` (`-ConsentEmail`) |
+| statement | the exact text shown, so the record still says what was agreed to if the text changes later |
 
-     ```
-     -NoProfile -ExecutionPolicy Bypass -File \\SERVER\assetscan$\Collect.ps1 -NoPrompt -NoMerge -DataDir \\SERVER\assetscan-data$
-     ```
-   - On the *Common* tab, tick **Apply once and do not reapply**. Without it,
-     Group Policy Preferences re-applies the item at every policy refresh, so
-     every computer would collect again roughly every 90 minutes.
-3. To build the spreadsheets, run `Export.ps1 -DataDir \\SERVER\assetscan-data$`
-   from your own PC whenever you want.
+The table keeps **every** answer, not only the latest. A machine scanned three
+times has three rows. Join it to `hardware.csv` on `asset_id`, or on
+`serial_number` + `hostname` while `asset_id` is blank.
 
-`-NoMerge` stops each computer from rebuilding the combined CSVs. With hundreds
-of computers starting at once, they would otherwise all rewrite the same file.
+To accept only addresses of the company's domain, set
+`$script:ConsentEmailDomain = 'yourdomain.com.br'` near the top of
+`assetscan\AssetScanLib.ps1`. The statement and the window title are also set
+there. They are written with `\u` escapes (`\u00e7` = ç, `\u00e3` = ã) because
+Windows PowerShell 5.1 would otherwise misread the accents.
 
-A few things differ from the USB stick when the collector runs as SYSTEM:
-
-- `user_id` is still the person logged on at the console, or blank if nobody is
-  logged on.
-- Per-user programs are found only for users who are logged on at that moment.
-- Store apps are not listed.
-
-To collect again later, create a new Immediate Task item; an *apply once* item
-that already ran is not run again on that computer.
-
-Data on the share includes usernames, so keep the share's read permission
-limited to IT.
+The window needs someone sitting at the desktop, so the collector cannot be
+pushed to computers through Group Policy or run as SYSTEM. If it is started
+without a desktop, it stops with an error and collects nothing.
+`-ConsentEmail` is for consent collected another way; it is recorded as
+`method=parameter`.
 
 ## Why there is no autorun
 
@@ -242,6 +244,9 @@ them.
 - **`key_type` is my reading of the column** as the Windows licence channel. If
   it means something else, the line `$hw['key_type'] = ...` in `Collect.ps1` is
   the one to change.
+- **Consent is recorded, not verified.** The tool cannot check that the e-mail
+  belongs to the person at the keyboard; it only checks the format (and the
+  domain, if set).
 - **ExecutionPolicy.** `RUN.cmd` uses `-ExecutionPolicy Bypass`. That flag does
   not override a policy set by Group Policy (`MachinePolicy`/`UserPolicy`), and
   AppLocker or WDAC can block scripts altogether. On such machines, the script

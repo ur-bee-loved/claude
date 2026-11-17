@@ -6,6 +6,8 @@
     hardware.csv, software.csv, software_detail.csv, run.log), then <DataDir>\hardware.csv,
     software.csv and software_detail.csv are rebuilt with the latest run of every machine.
     -NoMerge skips that rebuild, for many computers writing to one network share at once.
+    Nothing is read from the computer until the user accepts the consent window. -ConsentEmail
+    records consent given some other way (on paper, by e-mail) and skips the window.
 #>
 [CmdletBinding()]
 param(
@@ -14,7 +16,8 @@ param(
     [string]$AssetId,
     [string]$Department,
     [string]$Location,
-    [switch]$NoMerge
+    [switch]$NoMerge,
+    [string]$ConsentEmail
 )
 
 $ErrorActionPreference = 'Continue'
@@ -41,6 +44,87 @@ $script:LogPath = Join-Path $partialDir 'run.log'
 $elevated = Test-IsElevated
 Write-Log "assetscan $script:AssetScanVersion on $env:COMPUTERNAME, PowerShell $($PSVersionTable.PSVersion), elevated=$elevated"
 Write-Log "Data folder: $DataDir"
+
+function Complete-Run {
+    param($Meta, [string]$FinalName, $Details, [object[]]$SoftwareRows)
+    $finalDir = Join-Path $runsDir $FinalName
+    if (Test-Path -LiteralPath $finalDir) {
+        $FinalName = "${stamp}-$([guid]::NewGuid().ToString('N').Substring(0, 6))_" + $FinalName.Substring($stamp.Length + 1)
+        $finalDir = Join-Path $runsDir $FinalName
+    }
+    try {
+        Save-RunFiles -RunDir $partialDir -Meta $Meta -Details $Details -SoftwareRows $SoftwareRows
+        Rename-Item -LiteralPath $partialDir -NewName $FinalName -ErrorAction Stop
+        $script:LogPath = Join-Path $finalDir 'run.log'
+    } catch {
+        Write-Log "Could not save this run: $($_.Exception.Message)" 'ERROR'
+        exit 1
+    }
+    if ($NoMerge) {
+        Write-Log 'NoMerge: combined CSVs not rebuilt, run Export.ps1 later'
+    } else {
+        try {
+            $r = Update-MasterFiles -DataDirs $DataDir -OutDir $DataDir
+            Write-Log "Updated the combined CSVs: $($r.Machines) machine(s), $($r.Runs) run(s), $($r.Consents) consent record(s)"
+        } catch {
+            Write-Log "Run saved, but the combined CSVs were not updated (open in Excel?): $($_.Exception.Message)" 'ERROR'
+        }
+    }
+    $line = '{0}  {1,-15}  {2,-20}  {3,4} programs  {4} warning(s)  consent={5}  {6}' -f `
+        $Meta.collected_utc, $Meta.hardware['hostname'], $Meta.machine_key, $SoftwareRows.Count, $script:Warnings.Count, $Meta.consent['accepted'], $FinalName
+    try {
+        [IO.File]::AppendAllText((Join-Path $DataDir 'collections.log'), $line + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
+    } catch { }
+    return $finalDir
+}
+
+# ---- consent comes before anything is read from the computer
+if ($PSBoundParameters.ContainsKey('ConsentEmail')) {
+    if (-not (Test-CorporateEmail $ConsentEmail)) {
+        Write-Log "Invalid -ConsentEmail '$ConsentEmail'" 'ERROR'
+        exit 1
+    }
+    $answer = [pscustomobject]@{ Accepted = $true; Email = ConvertTo-CleanText $ConsentEmail }
+    $consentMethod = 'parameter'
+} else {
+    try {
+        $answer = Show-ConsentDialog
+    } catch {
+        Write-Log "The consent window could not be shown, nothing was collected: $($_.Exception.Message)" 'ERROR'
+        exit 1
+    }
+    $consentMethod = 'dialog'
+}
+$consent = [ordered]@{
+    accepted     = if ($answer.Accepted) { 'yes' } else { 'no' }
+    email        = if ($answer.Accepted) { $answer.Email } else { '' }
+    consent_date = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+    method       = $consentMethod
+    statement    = $script:ConsentStatement
+}
+Write-Log "Consent: accepted=$($consent.accepted) email=$($consent.email) method=$consentMethod"
+
+if (-not $answer.Accepted) {
+    $hw = New-EmptyHardware
+    $hw['hostname'] = $env:COMPUTERNAME
+    $hw['last_log_change'] = $started.ToString('yyyy-MM-dd HH:mm:ss')
+    $meta = [ordered]@{
+        schema          = 2
+        tool_version    = $script:AssetScanVersion
+        declined        = $true
+        machine_key     = "HN-$hostToken"
+        collected_utc   = $started.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+        collected_local = $started.ToString('yyyy-MM-dd HH:mm:ss zzz')
+        warnings        = @()
+        consent         = $consent
+        hardware        = $hw
+    }
+    $finalDir = Complete-Run -Meta $meta -FinalName "${stamp}_${hostToken}_DECLINED" -Details $null -SoftwareRows @()
+    Write-Host ''
+    Write-Host 'Coleta recusada: nenhuma informacao do sistema foi coletada.' -ForegroundColor Yellow
+    Write-Host "Consent refusal recorded in $finalDir"
+    exit 0
+}
 
 # ---- identity (fast) first, so the operator can answer prompts while the rest runs
 $cs = Invoke-Section 'Win32_ComputerSystem' { Get-CimSafe -Class Win32_ComputerSystem | Select-Object -First 1 }
@@ -172,7 +256,7 @@ $details = [ordered]@{
 }
 
 $meta = [ordered]@{
-    schema          = 1
+    schema          = 2
     tool_version    = $script:AssetScanVersion
     machine_key     = $identity.Key
     collected_utc   = $started.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
@@ -181,44 +265,16 @@ $meta = [ordered]@{
     elevated        = $elevated
     software_count  = $softwareRows.Count
     warnings        = @($script:Warnings)
+    consent         = $consent
     hardware        = $hw
 }
 
-$finalName = "${stamp}_${hostToken}_$($identity.Key)"
-$finalDir = Join-Path $runsDir $finalName
-if (Test-Path -LiteralPath $finalDir) {
-    $finalName = "${stamp}-$([guid]::NewGuid().ToString('N').Substring(0, 6))_${hostToken}_$($identity.Key)"
-    $finalDir = Join-Path $runsDir $finalName
-}
-try {
-    Save-RunFiles -RunDir $partialDir -Meta $meta -Details $details -SoftwareRows $softwareRows
-    Write-Log "Saved run files ($($softwareRows.Count) programs)"
-    Rename-Item -LiteralPath $partialDir -NewName $finalName -ErrorAction Stop
-    $script:LogPath = Join-Path $finalDir 'run.log'
-} catch {
-    Write-Log "Could not save this run: $($_.Exception.Message)" 'ERROR'
-    exit 1
-}
-
-if ($NoMerge) {
-    Write-Log 'NoMerge: combined CSVs not rebuilt, run Export.ps1 later'
-} else {
-    try {
-        $r = Update-MasterFiles -DataDirs $DataDir -OutDir $DataDir
-        Write-Log "Updated hardware.csv and software.csv: $($r.Machines) machine(s), $($r.Runs) run(s)"
-    } catch {
-        Write-Log "Run saved, but the combined CSVs were not updated (open in Excel?): $($_.Exception.Message)" 'ERROR'
-    }
-}
-
-$summary = '{0}  {1,-15}  {2,-20}  {3,4} programs  {4} warning(s)  {5}' -f `
-    $meta.collected_utc, $hostname, $identity.Key, $softwareRows.Count, $script:Warnings.Count, $finalName
-try {
-    [IO.File]::AppendAllText((Join-Path $DataDir 'collections.log'), $summary + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
-} catch { }
+$finalDir = Complete-Run -Meta $meta -FinalName "${stamp}_${hostToken}_$($identity.Key)" -Details $details -SoftwareRows $softwareRows
+Write-Log "Saved run files ($($softwareRows.Count) programs)"
 
 Write-Host ''
 Write-Host '==================== DONE ====================' -ForegroundColor Green
+Write-Host ('{0,-15} {1}' -f 'email', $consent.email)
 foreach ($k in 'asset_id', 'hostname', 'serial_number', 'type', 'manufacturer', 'model', 'os', 'user_id', 'mac_addr_wifi', 'mac_addr_eth', 'key_type') {
     Write-Host ('{0,-15} {1}' -f $k, $hw[$k])
 }

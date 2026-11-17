@@ -98,16 +98,25 @@ Assert-Equal $null (ConvertFrom-UninstallEntry -Values @{ DisplayName = '' } -Ar
 $d = @(Remove-DuplicateSoftware @($e, $e, (ConvertFrom-UninstallEntry -Values @{ DisplayName = 'Mozilla Firefox (x64 pt-BR)'; DisplayVersion = '133.0' } -Architecture '32-bit' -Scope 'machine')))
 Assert-Equal 2 $d.Count 'dedupe software'
 
+# ---- consent
+Assert-Equal $true (Test-CorporateEmail 'maria.silva@empresa.com.br') 'email ok'
+Assert-Equal $false (Test-CorporateEmail 'maria.silva') 'email without @'
+Assert-Equal $false (Test-CorporateEmail 'maria @empresa.com') 'email with space'
+Assert-Equal $true (Test-CorporateEmail 'Maria@Empresa.com.br' -Domain 'empresa.com.br') 'email domain match'
+Assert-Equal $false (Test-CorporateEmail 'maria@gmail.com' -Domain 'empresa.com.br') 'email domain mismatch'
+Assert-Equal 227 ([int][char]$script:ConsentStatement[($script:ConsentStatement.IndexOf('ser') + 3)]) 'statement has real accents (ser + a-tilde)'
+
 # ---- run files, merge and master CSVs, end to end on a temporary data folder
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ('assetscan-test-' + [guid]::NewGuid().ToString('N'))
 $data = Join-Path $tmp 'data'
 function New-FakeRun {
-    param([string]$Key, [string]$Utc, [string]$Hostname, [hashtable]$Fields, [string[]]$Programs)
+    param([string]$Key, [string]$Utc, [string]$Hostname, [hashtable]$Fields, [string[]]$Programs, [string]$Email = 'user@example.com', [switch]$Declined)
     $hw = New-EmptyHardware
     $hw['hostname'] = $Hostname
     $hw['last_log_change'] = $Utc
     foreach ($k in $Fields.Keys) { $hw[$k] = $Fields[$k] }
-    $meta = [ordered]@{ schema = 1; machine_key = $Key; collected_utc = $Utc; warnings = @(); hardware = $hw }
+    $consent = [ordered]@{ accepted = if ($Declined) { 'no' } else { 'yes' }; email = $Email; consent_date = $Utc; method = 'dialog'; statement = $script:ConsentStatement }
+    $meta = [ordered]@{ schema = 2; declined = [bool]$Declined; machine_key = $Key; collected_utc = $Utc; warnings = @(); consent = $consent; hardware = $hw }
     $rows = @(foreach ($p in $Programs) { New-SoftwareRecord -Hardware $hw -Item ([pscustomobject]@{ name = $p; version = '1.0'; source = 'registry' }) })
     $dir = Join-Path $data ("runs/{0}_{1}_{2}" -f ($Utc -replace '[-:]', ''), $Hostname, $Key)
     Save-RunFiles -RunDir $dir -Meta $meta -Details ([ordered]@{ x = 1 }) -SoftwareRows $rows
@@ -116,15 +125,19 @@ try {
     New-FakeRun -Key 'SN-AAA' -Utc '2026-01-01T10:00:00Z' -Hostname 'PC-B' -Fields @{ asset_id = 'TAG-1'; location = 'Sala 2'; os = 'old' } -Programs 'Old App'
     New-FakeRun -Key 'SN-AAA' -Utc '2026-02-01T10:00:00Z' -Hostname 'PC-B' -Fields @{ department = 'TI'; os = 'new' } -Programs 'App A', 'App B'
     New-FakeRun -Key 'SN-BBB' -Utc '2026-01-15T10:00:00Z' -Hostname 'PC-A' -Fields @{ asset_id = 'TAG-2'; serial_number = 'BBB' } -Programs @()
+    New-FakeRun -Key 'HN-PC-D' -Utc '2026-01-20T10:00:00Z' -Hostname 'PC-D' -Fields @{} -Programs @() -Email '' -Declined
     New-Item -ItemType Directory -Force -Path (Join-Path $data 'runs/20260301T000000Z_PC-C.partial') | Out-Null
 
     $metas = @(Read-RunMetas -DataDirs $data)
-    Assert-Equal 3 $metas.Count 'read metas skips partial'
+    Assert-Equal 4 $metas.Count 'read metas skips partial'
+    Assert-Equal $false (Test-Path -LiteralPath (Join-Path $data 'runs/20260120T100000Z_PC-D_HN-PC-D/hardware.csv')) 'declined run has no hardware file'
+    Assert-Equal $true (Test-Path -LiteralPath (Join-Path $data 'runs/20260120T100000Z_PC-D_HN-PC-D/consent.csv')) 'declined run has a consent file'
 
     $out = Join-Path $tmp 'out'
     $r = Update-MasterFiles -DataDirs $data -OutDir $out -History
-    Assert-Equal 2 $r.Machines 'machines'
-    Assert-Equal 3 $r.Runs 'runs'
+    Assert-Equal 2 $r.Machines 'machines (declined run left out)'
+    Assert-Equal 4 $r.Runs 'runs'
+    Assert-Equal 4 $r.Consents 'consent records, one per run'
     Assert-Equal 2 $r.SoftwareRows 'software rows from latest runs only'
 
     $lines = [IO.File]::ReadAllLines((Join-Path $out 'hardware.csv'))
@@ -154,7 +167,15 @@ try {
     Assert-Equal 2 @(Read-RunMetas -DataDirs $data -Key 'SN-AAA').Count 'read metas filtered by machine key'
 
     $hist = [IO.File]::ReadAllLines((Join-Path $out 'hardware_history.csv'))
-    Assert-Equal 4 $hist.Count 'history has every run'
+    Assert-Equal 4 $hist.Count 'history has every collected run'
+
+    $consents = @(Import-Csv -LiteralPath (Join-Path $out 'consent.csv') -Encoding UTF8)
+    Assert-Equal ($script:ConsentColumns -join ',') (($consents[0].PSObject.Properties | ForEach-Object { $_.Name }) -join ',') 'consent header'
+    Assert-Equal 'PC-B,PC-A,PC-D,PC-B' (($consents | ForEach-Object { $_.hostname }) -join ',') 'consent rows in time order'
+    Assert-Equal 'TAG-1|yes|user@example.com' ('{0}|{1}|{2}' -f $consents[3].asset_id, $consents[3].accepted, $consents[3].email) 'consent linked to merged asset_id'
+    Assert-Equal 'TAG-1' $consents[0].asset_id 'older consent also gets the current asset_id'
+    Assert-Equal '|no|' ('{0}|{1}|{2}' -f $consents[2].asset_id, $consents[2].accepted, $consents[2].email) 'declined consent row'
+    Assert-Equal $script:ConsentStatement $consents[0].statement 'statement survives the CSV round trip with accents'
 
     $bytes = [IO.File]::ReadAllBytes((Join-Path $out 'hardware.csv'))
     Assert-Equal '239,187,191' (($bytes[0..2]) -join ',') 'csv has UTF-8 BOM for Excel'
