@@ -10,6 +10,7 @@ nothing is shared between them.
 | [netaudit](netaudit/) | Network monitoring with fping and mtr, stored in SQLite with UTC timestamps, plus SQL reports on loss, latency, availability and outages | [netaudit/README.md](netaudit/README.md) |
 | [portmap](portmap/) | Browser map of switch ports, patch panels and desks (IP, MAC, name, state per port), served and saved by a small Python server, with an importer for the infrastructure spreadsheet | [portmap/README.md](portmap/README.md) |
 | [lexico](lexico/) | Deterministic lexical-morphology lookup (morphemes, erudite adjectives, synonyms, other forms) for pt, es, de, fr and en, built from Wiktionary on a laptop and served from a Raspberry Pi | [lexico/README.md](lexico/README.md) |
+| [assetscan](assetscan/) | USB-stick inventory for Windows: double-click on each PC to log its hardware (columns of the asset_manager_v3 hardware sheet) and installed programs; every run is kept on the stick and merged into hardware.csv and software.csv | [assetscan/README.md](assetscan/README.md) |
 
 ## Layout
 
@@ -19,10 +20,12 @@ nothing is shared between them.
   netaudit.yml     runs only when netaudit/ or this file changes
   portmap.yml      runs only when portmap/ or this file changes
   lexico.yml       runs only when lexico/ or this file changes
+  assetscan.yml    runs only when assetscan/ or this file changes (Windows runner)
 omniconv/          pyproject.toml, Makefile, package, scripts, packaging, tests
 netaudit/          netaudit.py, sql/, tests
 portmap/           server.py, import_xlsx.py, web/, data/, tests
 lexico/            package, fetch.sh, deploy/, tests
+assetscan/         usb/ (RUN.cmd, EXPORT.cmd, PowerShell scripts), tests
 ```
 
 Work inside an app's folder; every command in its README assumes that
@@ -30,7 +33,7 @@ folder is the current directory:
 
 ```sh
 git clone https://github.com/ur-bee-loved/claude
-cd claude/omniconv     # or claude/netaudit, claude/portmap, claude/lexico
+cd claude/omniconv     # or claude/netaudit, claude/portmap, claude/lexico, claude/assetscan
 ```
 
 ## Adding an app

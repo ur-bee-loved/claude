@@ -1,0 +1,67 @@
+name: assetscan
+
+on:
+  push:
+    branches: [main]
+    paths: ["assetscan/**", ".github/workflows/assetscan.yml"]
+  pull_request:
+    paths: ["assetscan/**", ".github/workflows/assetscan.yml"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: assetscan
+
+jobs:
+  windows:
+    name: Windows (${{ matrix.shell }})
+    runs-on: windows-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+        working-directory: assetscan
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit tests
+        run: ./tests/Test-AssetScan.ps1
+      - name: Collect twice on the runner
+        run: |
+          $d = Join-Path $env:RUNNER_TEMP 'data'
+          ./usb/assetscan/Collect.ps1 -NoPrompt -DataDir $d -AssetId CI-TEST-1 -Department IT -ConsentEmail ci@example.com
+          ./usb/assetscan/Collect.ps1 -NoPrompt -DataDir $d -ConsentEmail ci@example.com
+      - name: Check collected output
+        run: ./tests/Test-CollectOutput.ps1 -DataDir (Join-Path $env:RUNNER_TEMP 'data') -ExpectRuns 2 -ExpectAssetId CI-TEST-1
+      - name: Export
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'export'
+          ./usb/assetscan/Export.ps1 -DataDir (Join-Path $env:RUNNER_TEMP 'data') -OutDir $out -History
+          Get-Content (Join-Path $out 'hardware.csv')
+          if (-not (Test-Path (Join-Path $out 'hardware_history.csv'))) { exit 1 }
+      - name: Double-click launcher
+        if: matrix.shell == 'powershell'
+        shell: cmd
+        run: |
+          echo.| usb\RUN.cmd -NoPrompt -ConsentEmail ci@example.com -DataDir "%RUNNER_TEMP%\data-cmd"
+          if errorlevel 1 exit /b 1
+          if not exist "%RUNNER_TEMP%\data-cmd\hardware.csv" exit /b 1
+      - name: No-questions launcher
+        if: matrix.shell == 'powershell'
+        shell: cmd
+        run: |
+          call usb\QUICK.cmd -ConsentEmail ci@example.com -DataDir "%RUNNER_TEMP%\data-quick" < nul
+          if errorlevel 1 exit /b 1
+          if not exist "%RUNNER_TEMP%\data-quick\software.csv" exit /b 1
+      - name: Network-share mode (NoMerge)
+        run: |
+          $d = Join-Path $env:RUNNER_TEMP 'data-nomerge'
+          ./usb/assetscan/Collect.ps1 -NoPrompt -NoMerge -DataDir $d -ConsentEmail ci@example.com
+          if (Test-Path (Join-Path $d 'hardware.csv')) { throw 'NoMerge still wrote hardware.csv' }
+          ./usb/assetscan/Export.ps1 -DataDir $d -OutDir (Join-Path $env:RUNNER_TEMP 'export-nomerge')
