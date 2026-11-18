@@ -24,22 +24,22 @@ jobs:
       fail-fast: false
       matrix:
         shell: [powershell, pwsh]
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+        working-directory: assetscan
     steps:
       - uses: actions/checkout@v4
       - name: Unit tests
-        shell: ${{ matrix.shell }}
         run: ./tests/Test-AssetScan.ps1
       - name: Collect twice on the runner
-        shell: ${{ matrix.shell }}
         run: |
           $d = Join-Path $env:RUNNER_TEMP 'data'
           ./usb/assetscan/Collect.ps1 -NoPrompt -DataDir $d -AssetId CI-TEST-1 -Department IT -ConsentEmail ci@example.com
           ./usb/assetscan/Collect.ps1 -NoPrompt -DataDir $d -ConsentEmail ci@example.com
       - name: Check collected output
-        shell: ${{ matrix.shell }}
         run: ./tests/Test-CollectOutput.ps1 -DataDir (Join-Path $env:RUNNER_TEMP 'data') -ExpectRuns 2 -ExpectAssetId CI-TEST-1
       - name: Export
-        shell: ${{ matrix.shell }}
         run: |
           $out = Join-Path $env:RUNNER_TEMP 'export'
           ./usb/assetscan/Export.ps1 -DataDir (Join-Path $env:RUNNER_TEMP 'data') -OutDir $out -History
@@ -60,7 +60,6 @@ jobs:
           if errorlevel 1 exit /b 1
           if not exist "%RUNNER_TEMP%\data-quick\software.csv" exit /b 1
       - name: Network-share mode (NoMerge)
-        shell: ${{ matrix.shell }}
         run: |
           $d = Join-Path $env:RUNNER_TEMP 'data-nomerge'
           ./usb/assetscan/Collect.ps1 -NoPrompt -NoMerge -DataDir $d -ConsentEmail ci@example.com
