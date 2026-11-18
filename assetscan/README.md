@@ -4,9 +4,14 @@ A USB-stick inventory collector for Windows. Each time it runs on a computer, it
 that computer's hardware and installed programs onto the stick. It then rebuilds two
 spreadsheets covering every machine collected so far:
 
-- `hardware.csv` uses exactly the columns of the `asset_manager_v3 - hardware` sheet.
-- `software.csv` uses exactly the columns of the `asset_manager_v3 - software`
-  sheet, with one row per installed program per machine.
+- `hardware.csv` uses the columns of the `asset_manager_v3 - hardware` sheet,
+  plus a last column, `other_information`.
+- `software.csv` uses the columns of the `asset_manager_v3 - software` sheet,
+  plus `other_information`, with one row per installed program per machine.
+
+`other_information` holds everything collected that has no column of its own,
+as `name: value | name: value`. Add an `other_information` column at the end of
+both sheets so pasted rows line up.
 - `software_detail.csv` holds the same programs with hostname, serial number,
   install date and scope, so they can be matched to a machine even when
   `asset_id` is blank.
@@ -41,7 +46,7 @@ stops the run before anything is read from the computer (see
 **Fastest:** plug the stick in, double-click `QUICK.cmd`, and let the user
 accept the window. Unplug once the console window closes itself. It asks
 nothing else; `asset_id`, `department` and `location` keep their previous
-values (or the BIOS asset tag), and you fill the rest in the sheet later.
+values, and you fill the rest in the sheet later.
 
 **With questions:**
 
@@ -50,8 +55,7 @@ values (or the BIOS asset tag), and you fill the rest in the sheet later.
    so it must be started by hand.
 2. After the consent window, it asks for `asset_id`, `department` and `location`:
    - Press Enter to keep the value shown in brackets. That value comes from the
-     last time this machine was collected, or, for `asset_id`, from the BIOS
-     asset tag if one is set.
+     last time this machine was collected.
    - Type `-` to clear the value.
 3. It takes about 10–60 seconds, then prints a summary. Press a key to close.
 
@@ -121,7 +125,7 @@ Every other column always comes from the latest run.
 
 | Column | Source | Notes |
 |---|---|---|
-| asset_id | typed by operator; default: previous run, else `Win32_SystemEnclosure.SMBIOSAssetTag` | |
+| asset_id | typed by operator; default: previous run | the BIOS asset tag is not used; if one is set it goes to `other_information` |
 | serial_number | `Win32_BIOS.SerialNumber` → `Win32_ComputerSystemProduct.IdentifyingNumber` → `Win32_SystemEnclosure.SerialNumber` | placeholders discarded |
 | mac_addr_wifi | `Get-NetAdapter -Physical`, `NdisPhysicalMedium` = 9 (802.11) | built-in (PCI) adapter preferred |
 | mac_addr_eth | same, `NdisPhysicalMedium` = 14 (802.3) | built-in preferred over USB docks |
@@ -138,6 +142,32 @@ Every other column always comes from the latest run.
 | acquired_in, receipt_number, status, approved_to_connect | left blank | cannot be read from the machine |
 | ` location` | typed by operator | the header has a leading space, as in the sheet |
 | last_log_change | local time of the collection | `yyyy-MM-dd HH:mm:ss` |
+| other_information | everything else, see below | not in the sheet yet |
+
+`other_information` in `hardware.csv` (an entry is left out when it is empty):
+
+| Entry | Source |
+|---|---|
+| domain, domain_joined, dns_hostname | `Win32_ComputerSystem` (dns_hostname only when it differs from hostname) |
+| system_family, system_sku, uuid | `Win32_ComputerSystem`, `Win32_ComputerSystemProduct` |
+| chassis_serial, board_serial | enclosure and motherboard serials, when real and different from serial_number |
+| bios_asset_tag, bios_vendor | `Win32_SystemEnclosure`, `Win32_BIOS` |
+| secure_boot | `HKLM\SYSTEM\CurrentControlSet\Control\SecureBoot\State` |
+| tpm | `Win32_Tpm`, only when run as administrator (it needs admin rights) |
+| os_edition, os_language, os_install_date, last_boot, registered_owner, organization, time_zone | registry and `Win32_OperatingSystem` |
+| license_status, firmware_product_key | Windows activation state; whether an OEM key is stored in the firmware (the key itself is not recorded) |
+| memory_modules | slot, size, speed, maker, part number, serial of each module |
+| disks | model, bus, serial of each internal disk |
+| volumes | each local volume with file system, size and free space |
+| network_adapters | name, description, MAC, status, speed of each physical adapter |
+| ip_config | IP addresses, gateway, DNS servers, DHCP of each connected adapter |
+| gpu_drivers | video card, driver version, current resolution |
+| monitors | maker, model, serial and year of each connected monitor (`WmiMonitorID`) |
+| battery, antivirus, printers | `Win32_Battery`, Security Center (Windows 10/11 only), `Win32_Printer` |
+| scanned_by, scanned_as_admin | the Windows account that ran the tool |
+
+`details.json` in each run folder keeps the same data with one field per value,
+for when the cell is not enough.
 
 RAM is reported in binary GB (8 GiB → "8 GB"), as Windows shows it. Disks are
 reported in decimal GB (a "256 GB" SSD → "256 GB"), as the manufacturer labels
@@ -154,6 +184,7 @@ it. USB disks, including the stick itself, are left out.
 | department | the machine's `department` after merging |
 | usage, url, is_paid, licenses, internal_support_status | left blank, filled in elsewhere |
 | last_log_change | same as hardware |
+| other_information | hostname, serial_number, install_date, architecture, scope, source, install_location (not in the sheet yet) |
 
 `software_detail.csv`:
 

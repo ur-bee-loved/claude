@@ -18,7 +18,7 @@ function Assert-Equal {
 # ---- text helpers
 Assert-Equal '' (ConvertTo-CleanText $null) 'clean null'
 Assert-Equal 'a b' (ConvertTo-CleanText "  a`t`n b  ") 'clean whitespace'
-foreach ($p in 'To be filled by O.E.M.', 'Default string', '0', '00000000', 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF', 'System Serial Number', '', ' ', 'N/A', 'None') {
+foreach ($p in 'To be filled by O.E.M.', 'Default string', 'No Asset Tag', 'No Asset Information', 'Asset-1234567890', '0', '00000000', 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF', 'System Serial Number', '', ' ', 'N/A', 'None') {
     Assert-Equal $true (Test-Placeholder $p) "placeholder '$p'"
 }
 foreach ($p in 'PF1ABCDE', '5CG1234XYZ', 'C02XK0ABJGH5') {
@@ -98,6 +98,17 @@ Assert-Equal $null (ConvertFrom-UninstallEntry -Values @{ DisplayName = '' } -Ar
 $d = @(Remove-DuplicateSoftware @($e, $e, (ConvertFrom-UninstallEntry -Values @{ DisplayName = 'Mozilla Firefox (x64 pt-BR)'; DisplayVersion = '133.0' } -Architecture '32-bit' -Scope 'machine')))
 Assert-Equal 2 $d.Count 'dedupe software'
 
+# ---- other information
+$oi = [ordered]@{ domain = 'EMPRESA'; empty = ''; none = $null; list = @('a', '', 'b|c'); joined = (Format-YesNo $true); date = (Format-DateValue ([datetime]'2024-03-05 14:07:00')) }
+Assert-Equal 'domain: EMPRESA | list: a; b/c | joined: yes | date: 2024-03-05 14:07' (Format-OtherInfo $oi) 'other info format'
+Assert-Equal '' (Format-OtherInfo ([ordered]@{ a = ''; b = @() })) 'other info empty'
+Assert-Equal 'a: xxxxxx...' (Format-OtherInfo ([ordered]@{ a = ('x' * 50) }) -MaxLength 12) 'other info truncated'
+Assert-Equal 'DEL' (ConvertFrom-WmiCharArray @(68, 69, 76, 0, 0)) 'wmi char array'
+Assert-Equal '' (ConvertFrom-WmiCharArray $null) 'wmi char array null'
+Assert-Equal 'no' (Format-YesNo $false) 'yes/no false'
+Assert-Equal '' (Format-YesNo $null) 'yes/no null'
+Assert-Equal '16 GB' (Format-GB ([uint64]17179869184)) 'format GB'
+
 # ---- consent
 Assert-Equal $true (Test-CorporateEmail 'maria.silva@empresa.com.br') 'email ok'
 Assert-Equal $false (Test-CorporateEmail 'maria.silva') 'email without @'
@@ -141,7 +152,7 @@ try {
     Assert-Equal 2 $r.SoftwareRows 'software rows from latest runs only'
 
     $lines = [IO.File]::ReadAllLines((Join-Path $out 'hardware.csv'))
-    $expectedHeader = '"asset_id","serial_number","mac_addr_wifi","mac_addr_eth","mac_addr_extra","type","user_id","department","model","manufacturer","os","extra_hw_info","key_type","hostname","acquired_in","receipt_number"," location","status","approved_to_connect","last_log_change"'
+    $expectedHeader = '"asset_id","serial_number","mac_addr_wifi","mac_addr_eth","mac_addr_extra","type","user_id","department","model","manufacturer","os","extra_hw_info","key_type","hostname","acquired_in","receipt_number"," location","status","approved_to_connect","last_log_change","other_information"'
     Assert-Equal $expectedHeader $lines[0] 'hardware header matches the sheet'
     Assert-Equal 3 $lines.Count 'hardware rows'
 
@@ -158,11 +169,11 @@ try {
     Assert-Equal 'TAG-1' $sw[0].asset_id 'software asset_id follows merged hardware'
 
     $sheet = [IO.File]::ReadAllLines((Join-Path $out 'software.csv'))
-    Assert-Equal '" asset_id","title","publisher","version","department","usage","url","is_paid","licenses","internal_support_status","last_log_change"' $sheet[0] 'software header matches the sheet'
-    Assert-Equal '"TAG-1","App A","","1.0","TI","","","","","","2026-02-01T10:00:00Z"' $sheet[1] 'software sheet row: asset_id and department from merged hardware'
+    Assert-Equal '" asset_id","title","publisher","version","department","usage","url","is_paid","licenses","internal_support_status","last_log_change","other_information"' $sheet[0] 'software header matches the sheet'
+    Assert-Equal '"TAG-1","App A","","1.0","TI","","","","","","2026-02-01T10:00:00Z","hostname: PC-B | source: registry"' $sheet[1] 'software sheet row: asset_id and department from merged hardware'
     Assert-Equal 3 $sheet.Count 'software sheet rows'
     $runSheet = [IO.File]::ReadAllLines((Join-Path $data 'runs/20260201T100000Z_PC-B_SN-AAA/software.csv'))
-    Assert-Equal '"","App A","","1.0","TI","","","","","","2026-02-01T10:00:00Z"' $runSheet[1] 'per-run software sheet uses that run only'
+    Assert-Equal '"","App A","","1.0","TI","","","","","","2026-02-01T10:00:00Z","hostname: PC-B | source: registry"' $runSheet[1] 'per-run software sheet uses that run only'
 
     Assert-Equal 2 @(Read-RunMetas -DataDirs $data -Key 'SN-AAA').Count 'read metas filtered by machine key'
 

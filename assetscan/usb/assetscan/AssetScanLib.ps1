@@ -23,6 +23,7 @@ $script:HardwareHeaders = [ordered]@{
     status              = 'status'
     approved_to_connect = 'approved_to_connect'
     last_log_change     = 'last_log_change'
+    other_information   = 'other_information'
 }
 
 # Internal field name -> column header in the asset_manager_v3 software sheet.
@@ -39,6 +40,7 @@ $script:SoftwareHeaders = [ordered]@{
     licenses                = 'licenses'
     internal_support_status = 'internal_support_status'
     last_log_change         = 'last_log_change'
+    other_information       = 'other_information'
 }
 
 # Per-machine detail kept next to the sheet file, so programs can be tied to a
@@ -106,6 +108,7 @@ function Test-Placeholder {
     if ($v -eq '') { return $true }
     $rx = '^(?i)(to be filled by o\.?e\.?m\.?|default string|system serial number|chassis serial number|' +
           'base board serial number|system product name|not specified|not applicable|not available|' +
+          'no asset tag|no asset information|asset-?1234567890|' +
           'none|n/?a|invalid|unknown|serial ?number|o\.?e\.?m\.?|0123456789|123456789|1234567890)$'
     if ($v -match $rx) { return $true }
     $compact = $v -replace '[\s\-\.:]', ''
@@ -343,7 +346,60 @@ function ConvertTo-SoftwareSheetRecord {
     $o['version'] = [string](Get-Prop $Detail 'version')
     $o['department'] = [string](Get-Prop $Hardware 'department')
     $o['last_log_change'] = [string](Get-Prop $Detail 'last_log_change')
+    $extra = [ordered]@{}
+    foreach ($k in 'hostname', 'serial_number', 'install_date', 'architecture', 'scope', 'source', 'install_location') {
+        $extra[$k] = Get-Prop $Detail $k
+    }
+    $o['other_information'] = Format-OtherInfo $extra
     return [pscustomobject]$o
+}
+
+# Ordered name -> value pairs as one cell: "name: value | name: value".
+# Lists are joined with "; ", empty values are left out.
+function Format-OtherInfo {
+    param([System.Collections.IDictionary]$Items, [int]$MaxLength = 30000)
+    $parts = New-Object System.Collections.Generic.List[string]
+    if ($null -eq $Items) { return '' }
+    foreach ($k in @($Items.Keys)) {
+        $v = $Items[$k]
+        if ($null -eq $v) { continue }
+        if ($v -is [System.Collections.IEnumerable] -and $v -isnot [string]) {
+            $text = @(foreach ($x in $v) { $t = ConvertTo-CleanText $x; if ($t) { $t } }) -join '; '
+        } else {
+            $text = ConvertTo-CleanText $v
+        }
+        $text = $text -replace '\|', '/'
+        if ($text -eq '') { continue }
+        $parts.Add("${k}: $text")
+    }
+    $out = $parts -join ' | '
+    if ($out.Length -gt $MaxLength) { $out = $out.Substring(0, $MaxLength - 3) + '...' }
+    return $out
+}
+
+function ConvertFrom-WmiCharArray {
+    param($Codes)
+    $chars = @(foreach ($c in @($Codes)) { if ($null -ne $c -and [int]$c -ne 0) { [char][int]$c } })
+    return ConvertTo-CleanText (-join $chars)
+}
+
+function Format-DateValue {
+    param($Value)
+    if ($Value -is [datetime]) { return $Value.ToString('yyyy-MM-dd HH:mm') }
+    return ConvertTo-CleanText $Value
+}
+
+function Format-GB {
+    param($Bytes)
+    if (-not $Bytes) { return '' }
+    return '{0} GB' -f [math]::Round([double]$Bytes / 1GB)
+}
+
+function Format-YesNo {
+    param($Value)
+    if ($null -eq $Value -or "$Value" -eq '') { return '' }
+    if ($Value -eq $true -or "$Value" -eq '1') { return 'yes' }
+    return 'no'
 }
 
 function Test-CorporateEmail {
@@ -824,6 +880,23 @@ function Show-ConsentDialog {
     } finally {
         $form.Dispose()
     }
+}
+
+function Get-SecureBootState {
+    $key = 'HKLM:\SYSTEM\CurrentControlSet\Control\SecureBoot\State'
+    if (-not (Test-Path -LiteralPath $key)) { return 'not supported (legacy BIOS)' }
+    $v = Get-Prop (Get-ItemProperty -LiteralPath $key -ErrorAction Stop) 'UEFISecureBootEnabled'
+    if ($null -eq $v) { return '' }
+    if ([int]$v -eq 1) { return 'on' }
+    return 'off'
+}
+
+function Get-TpmSummary {
+    $t = @(Get-CimSafe -Class Win32_Tpm -Namespace 'root\cimv2\Security\MicrosoftTpm') | Select-Object -First 1
+    if ($null -eq $t) { return 'none' }
+    $spec = ConvertTo-CleanText ((ConvertTo-CleanText (Get-Prop $t 'SpecVersion')) -split ',')[0]
+    $enabled = Format-YesNo (Get-Prop $t 'IsEnabled_InitialValue')
+    return ('present, spec {0}, enabled {1}' -f $spec, $enabled)
 }
 
 function Test-IsElevated {
