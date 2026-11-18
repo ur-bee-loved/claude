@@ -169,7 +169,6 @@ $defaults = @{
     department = [string](Get-Prop $previous 'department')
     location   = [string](Get-Prop $previous 'location')
 }
-if ($defaults.asset_id -eq '') { $defaults.asset_id = $assetTag }
 
 $operator = @{}
 $given = @{ asset_id = $AssetId; department = $Department; location = $Location }
@@ -195,6 +194,17 @@ $gpus = @(Invoke-Section 'Win32_VideoController' { Get-CimSafe -Class Win32_Vide
 $adapters = @(Invoke-Section 'Network adapters' { Get-AdapterInventory })
 $volumes = @(Invoke-Section 'Win32_LogicalDisk' { Get-CimSafe -Class Win32_LogicalDisk -Filter 'DriveType = 3' })
 $license = Invoke-Section 'Windows license' { Get-WindowsLicense }
+$ipConfig = @(Invoke-Section 'IP configuration' { Get-CimSafe -Class Win32_NetworkAdapterConfiguration -Filter 'IPEnabled = TRUE' })
+$monitors = @(Invoke-Section 'Monitors' { Get-CimSafe -Class WmiMonitorID -Namespace 'root\wmi' })
+$batteries = @(Invoke-Section 'Win32_Battery' { Get-CimSafe -Class Win32_Battery })
+$printers = @(Invoke-Section 'Win32_Printer' { Get-CimSafe -Class Win32_Printer })
+$secureBoot = Invoke-Section 'Secure Boot' { Get-SecureBootState }
+$tpm = ''
+if ($elevated) { $tpm = Invoke-Section 'TPM' { Get-TpmSummary } }
+$antivirus = @()
+if ([string](Get-Prop $os 'ProductType') -eq '1') {
+    $antivirus = @(Invoke-Section 'Antivirus (Security Center)' { Get-CimSafe -Class AntiVirusProduct -Namespace 'root\SecurityCenter2' })
+}
 $software = @(Invoke-Section 'Installed programs (registry)' { Get-InstalledSoftware })
 $storeApps = @(Invoke-Section 'Store apps (current user)' { Get-StoreApps })
 
@@ -235,6 +245,89 @@ $hw['hostname'] = $hostname
 $hw['location'] = $operator['location']
 $hw['last_log_change'] = $started.ToString('yyyy-MM-dd HH:mm:ss')
 
+$other = [ordered]@{}
+$other['domain'] = Get-Prop $cs 'Domain'
+$other['domain_joined'] = Format-YesNo (Get-Prop $cs 'PartOfDomain')
+$dnsName = ConvertTo-CleanText (Get-Prop $cs 'DNSHostName')
+if ($dnsName -and $dnsName -ne $hostname) { $other['dns_hostname'] = $dnsName }
+$other['system_family'] = Get-Prop $cs 'SystemFamily'
+$other['system_sku'] = Get-Prop $cs 'SystemSKUNumber'
+$other['uuid'] = Get-Prop $csp 'UUID'
+$encSerial = ConvertTo-CleanText (Get-Prop $enc 'SerialNumber')
+if (-not (Test-Placeholder $encSerial) -and $encSerial -ne $identity.Serial) { $other['chassis_serial'] = $encSerial }
+$boardSerial = ConvertTo-CleanText (Get-Prop $board 'SerialNumber')
+if (-not (Test-Placeholder $boardSerial) -and $boardSerial -ne $identity.Serial) { $other['board_serial'] = $boardSerial }
+if ($assetTag) { $other['bios_asset_tag'] = $assetTag }
+$other['bios_vendor'] = Get-Prop $bios 'Manufacturer'
+$other['secure_boot'] = $secureBoot
+$other['tpm'] = $tpm
+$other['os_edition'] = Get-Prop $cv 'EditionID'
+$other['os_language'] = Get-Prop $os 'MUILanguages'
+$other['os_install_date'] = Format-DateValue (Get-Prop $os 'InstallDate')
+$other['last_boot'] = Format-DateValue (Get-Prop $os 'LastBootUpTime')
+$other['registered_owner'] = Get-Prop $os 'RegisteredUser'
+$other['organization'] = Get-Prop $os 'Organization'
+$other['time_zone'] = [TimeZoneInfo]::Local.Id
+$other['license_status'] = Get-Prop $license 'Status'
+if ($null -ne $license) { $other['firmware_product_key'] = Format-YesNo (Get-Prop $license 'FirmwareKeyPresent') }
+$other['memory_modules'] = @(foreach ($m in $mem) {
+    if ($null -eq $m) { continue }
+    $line = '{0} {1}' -f (ConvertTo-CleanText (Get-Prop $m 'DeviceLocator')), (Format-GB (Get-Prop $m 'Capacity'))
+    $speed = Get-Prop $m 'Speed'
+    if ($speed) { $line += " $speed MHz" }
+    $line += ' ' + (ConvertTo-CleanText ('{0} {1}' -f (Get-Prop $m 'Manufacturer'), (Get-Prop $m 'PartNumber')))
+    $memSerial = ConvertTo-CleanText (Get-Prop $m 'SerialNumber')
+    if (-not (Test-Placeholder $memSerial)) { $line += " SN $memSerial" }
+    $line
+})
+$other['disks'] = @(foreach ($d in $disks) {
+    if ($null -eq $d) { continue }
+    $line = '{0} {1}' -f $d.Model, $d.Bus
+    if (-not (Test-Placeholder $d.Serial)) { $line += " SN $($d.Serial)" }
+    $line
+})
+$other['volumes'] = @(foreach ($v in $volumes) {
+    if ($null -eq $v) { continue }
+    '{0} {1} {2}, {3} free' -f (Get-Prop $v 'DeviceID'), (Get-Prop $v 'FileSystem'), (Format-GB (Get-Prop $v 'Size')), (Format-GB (Get-Prop $v 'FreeSpace'))
+})
+$other['network_adapters'] = @(foreach ($a in $adapters) {
+    if ($null -eq $a) { continue }
+    '{0} ({1}) {2} {3} {4}' -f $a.Name, $a.Description, (ConvertTo-Mac $a.Mac), $a.Status, $a.LinkSpeed
+})
+$other['ip_config'] = @(foreach ($c in $ipConfig) {
+    if ($null -eq $c) { continue }
+    $line = '{0}: {1}' -f (ConvertTo-CleanText (Get-Prop $c 'Description')), (@(Get-Prop $c 'IPAddress') -join ', ')
+    $gw = @(Get-Prop $c 'DefaultIPGateway') -join ', '
+    if ($gw) { $line += " gw $gw" }
+    $dnsServers = @(Get-Prop $c 'DNSServerSearchOrder') -join ', '
+    if ($dnsServers) { $line += " dns $dnsServers" }
+    $line += ' dhcp ' + (Format-YesNo (Get-Prop $c 'DHCPEnabled'))
+    $line
+})
+$other['gpu_drivers'] = @(foreach ($g in $gpus) {
+    if ($null -eq $g) { continue }
+    $line = '{0} {1}' -f (ConvertTo-CleanText (Get-Prop $g 'Name')), (Get-Prop $g 'DriverVersion')
+    $rx = Get-Prop $g 'CurrentHorizontalResolution'
+    $ry = Get-Prop $g 'CurrentVerticalResolution'
+    if ($rx -and $ry) { $line += " ${rx}x${ry}" }
+    $line
+})
+$other['monitors'] = @(foreach ($m in $monitors) {
+    if ($null -eq $m) { continue }
+    $line = '{0} {1}' -f (ConvertFrom-WmiCharArray (Get-Prop $m 'ManufacturerName')), (ConvertFrom-WmiCharArray (Get-Prop $m 'UserFriendlyName'))
+    $monSerial = ConvertFrom-WmiCharArray (Get-Prop $m 'SerialNumberID')
+    if (-not (Test-Placeholder $monSerial)) { $line += " SN $monSerial" }
+    $year = Get-Prop $m 'YearOfManufacture'
+    if ($year) { $line += " ($year)" }
+    $line
+})
+$other['battery'] = @(foreach ($b in $batteries) { if ($null -ne $b) { ConvertTo-CleanText (Get-Prop $b 'Name') } })
+$other['antivirus'] = @(foreach ($av in $antivirus) { if ($null -ne $av) { ConvertTo-CleanText (Get-Prop $av 'displayName') } })
+$other['printers'] = @(foreach ($pr in $printers) { if ($null -ne $pr) { ConvertTo-CleanText (Get-Prop $pr 'Name') } })
+$other['scanned_by'] = "$env:USERDOMAIN\$env:USERNAME"
+$other['scanned_as_admin'] = Format-YesNo $elevated
+$hw['other_information'] = Format-OtherInfo $other
+
 $allSoftware = @(@($software) + @($storeApps) | Where-Object { $null -ne $_ } | Sort-Object -Property name, version)
 $softwareRows = @(foreach ($s in $allSoftware) { New-SoftwareRecord -Hardware $hw -Item $s })
 
@@ -244,7 +337,7 @@ $details = [ordered]@{
     bios             = @(Select-Plain $bios 'Manufacturer', 'SMBIOSBIOSVersion', 'ReleaseDate', 'SerialNumber', 'SMBIOSMajorVersion', 'SMBIOSMinorVersion')
     enclosure        = @(Select-Plain $enc 'Manufacturer', 'ChassisTypes', 'SerialNumber', 'SMBIOSAssetTag')
     baseboard        = @(Select-Plain $board 'Manufacturer', 'Product', 'Version', 'SerialNumber')
-    operating_system = @(Select-Plain $os 'Caption', 'Version', 'BuildNumber', 'OSArchitecture', 'OSLanguage', 'InstallDate', 'LastBootUpTime', 'RegisteredUser', 'Organization')
+    operating_system = @(Select-Plain $os 'Caption', 'Version', 'BuildNumber', 'OSArchitecture', 'OSLanguage', 'MUILanguages', 'ProductType', 'InstallDate', 'LastBootUpTime', 'RegisteredUser', 'Organization')
     windows_version  = @(Select-Plain $cv 'EditionID', 'DisplayVersion', 'ReleaseId', 'CurrentBuild', 'UBR')
     processors       = @(Select-Plain $cpus 'Name', 'Manufacturer', 'NumberOfCores', 'NumberOfLogicalProcessors', 'MaxClockSpeed', 'SocketDesignation')
     memory_modules   = @(Select-Plain $mem 'DeviceLocator', 'Capacity', 'Speed', 'Manufacturer', 'PartNumber', 'SerialNumber', 'SMBIOSMemoryType')
@@ -253,6 +346,14 @@ $details = [ordered]@{
     video            = @(Select-Plain $gpus 'Name', 'DriverVersion', 'VideoProcessor', 'AdapterRAM', 'CurrentHorizontalResolution', 'CurrentVerticalResolution')
     network_adapters = $adapters
     license          = $license
+    ip_config        = @(Select-Plain $ipConfig 'Description', 'MACAddress', 'IPAddress', 'IPSubnet', 'DefaultIPGateway', 'DNSServerSearchOrder', 'DHCPEnabled', 'DNSDomain')
+    monitors         = @($other['monitors'])
+    batteries        = @(Select-Plain $batteries 'Name', 'DeviceID', 'EstimatedChargeRemaining', 'BatteryStatus')
+    printers         = @(Select-Plain $printers 'Name', 'PortName', 'DriverName', 'Network', 'Default', 'Shared')
+    antivirus        = @(Select-Plain $antivirus 'displayName', 'productState')
+    secure_boot      = $secureBoot
+    tpm              = $tpm
+    other            = $other
 }
 
 $meta = [ordered]@{

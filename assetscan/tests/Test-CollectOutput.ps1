@@ -20,7 +20,7 @@ $lines = @([IO.File]::ReadAllLines($hwPath))
 if ($lines.Count -ne 2) { $failures += "hardware.csv should have 1 machine, has $($lines.Count - 1) row(s)" }
 $hw = @(Import-Csv -LiteralPath $hwPath -Encoding UTF8)[0]
 if ($hw.hostname -ne $env:COMPUTERNAME) { $failures += "hostname '$($hw.hostname)' is not '$env:COMPUTERNAME'" }
-foreach ($c in 'os', 'manufacturer', 'model', 'type', 'user_id', 'last_log_change') {
+foreach ($c in 'os', 'manufacturer', 'model', 'type', 'user_id', 'last_log_change', 'other_information') {
     if (-not $hw.$c) { $failures += "hardware column $c is empty" }
 }
 if ($ExpectAssetId -and $hw.asset_id -ne $ExpectAssetId) { $failures += "asset_id '$($hw.asset_id)' is not '$ExpectAssetId'" }
@@ -28,7 +28,7 @@ if (-not ($hw.mac_addr_eth -or $hw.mac_addr_wifi -or $hw.mac_addr_extra)) { $fai
 
 $sw = @(Import-Csv -LiteralPath (Join-Path $DataDir 'software_detail.csv') -Encoding UTF8)
 $sheet = @([IO.File]::ReadAllLines((Join-Path $DataDir 'software.csv')))
-if ($sheet[0] -ne '" asset_id","title","publisher","version","department","usage","url","is_paid","licenses","internal_support_status","last_log_change"') { $failures += "software.csv header is $($sheet[0])" }
+if ($sheet[0] -ne '" asset_id","title","publisher","version","department","usage","url","is_paid","licenses","internal_support_status","last_log_change","other_information"') { $failures += "software.csv header is $($sheet[0])" }
 if ($sheet.Count - 1 -ne $sw.Count) { $failures += "software.csv has $($sheet.Count - 1) rows, software_detail.csv $($sw.Count)" }
 $consents = @(Import-Csv -LiteralPath (Join-Path $DataDir 'consent.csv') -Encoding UTF8)
 if ($consents.Count -ne $ExpectRuns) { $failures += "consent.csv has $($consents.Count) row(s), expected $ExpectRuns" }
