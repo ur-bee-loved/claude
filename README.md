@@ -1,51 +1,30 @@
-# Apps
+# Apps (archived)
 
-A collection of independent applications. Each one lives in its own
-folder with its own README, dependencies, tests and CI workflow, and
-nothing is shared between them.
+This repository is archived. Each app it held now has its own repository,
+with its full history, CI workflow and README:
 
-| App | What it does | Docs |
-|---|---|---|
-| [omniconv](omniconv/) | Desktop file converter for Linux and Windows (GTK 4 / Qt 6 window and a command line) that drives ffmpeg, ImageMagick, LibreOffice, pandoc and other installed tools | [omniconv/README.md](omniconv/README.md) |
-| [netaudit](netaudit/) | Network monitoring with fping and mtr, stored in SQLite with UTC timestamps, plus SQL reports on loss, latency, availability and outages | [netaudit/README.md](netaudit/README.md) |
-| [portmap](portmap/) | Browser map of switch ports, patch panels and desks (IP, MAC, name, state per port), served and saved by a small Python server, with an importer for the infrastructure spreadsheet | [portmap/README.md](portmap/README.md) |
-| [lexico](lexico/) | Deterministic lexical-morphology lookup (morphemes, erudite adjectives, synonyms, other forms) for pt, es, de, fr and en, built from Wiktionary on a laptop and served from a Raspberry Pi | [lexico/README.md](lexico/README.md) |
-| [assetscan](assetscan/) | USB-stick inventory for Windows: double-click on each PC to log its hardware (columns of the asset_manager_v3 hardware sheet) and installed programs; every run is kept on the stick and merged into hardware.csv and software.csv | [assetscan/README.md](assetscan/README.md) |
+| App | What it does |
+|---|---|
+| [omniconv](https://github.com/ur-bee-loved/omniconv) | Desktop file converter for Linux and Windows (GTK 4 / Qt 6 window and a command line) that drives ffmpeg, ImageMagick, LibreOffice, pandoc and other installed tools |
+| [netaudit](https://github.com/ur-bee-loved/netaudit) | Network monitoring with fping and mtr, stored in SQLite with UTC timestamps, plus SQL reports on loss, latency, availability and outages |
+| [portmap](https://github.com/ur-bee-loved/portmap) | Browser map of switch ports, patch panels and desks (IP, MAC, name, state per port), served and saved by a small Python server, with an importer for the infrastructure spreadsheet |
+| [lexico](https://github.com/ur-bee-loved/lexico) | Deterministic lexical-morphology lookup (morphemes, erudite adjectives, synonyms, other forms) for pt, es, de, fr and en, built from Wiktionary on a laptop and served from a Raspberry Pi |
+| [assetscan](https://github.com/ur-bee-loved/assetscan) | USB-stick inventory for Windows: double-click on each PC to log its hardware (columns of the asset_manager_v3 hardware sheet) and installed programs; every run is kept on the stick and merged into hardware.csv and software.csv |
+| [esp8266_stepper](https://github.com/ur-bee-loved/esp8266_stepper) | Arduino sketch that drives a 28BYJ-48 stepper through a ULN2003 board from an ESP8266 NodeMCU (D1, D2, D5, D6) |
 
-## Layout
-
-```
-.github/workflows/
-  omniconv.yml     runs only when omniconv/ or this file changes
-  netaudit.yml     runs only when netaudit/ or this file changes
-  portmap.yml      runs only when portmap/ or this file changes
-  lexico.yml       runs only when lexico/ or this file changes
-  assetscan.yml    runs only when assetscan/ or this file changes (Windows runner)
-omniconv/          pyproject.toml, Makefile, package, scripts, packaging, tests
-netaudit/          netaudit.py, sql/, tests
-portmap/           server.py, import_xlsx.py, web/, data/, tests
-lexico/            package, fetch.sh, deploy/, tests
-assetscan/         usb/ (RUN.cmd, EXPORT.cmd, PowerShell scripts), tests
-```
-
-Work inside an app's folder; every command in its README assumes that
-folder is the current directory:
+Clone only the one you need; every command in its README runs from the
+repository root:
 
 ```sh
-git clone https://github.com/ur-bee-loved/claude
-cd claude/omniconv     # or claude/netaudit, claude/portmap, claude/lexico, claude/assetscan
+git clone https://github.com/ur-bee-loved/omniconv
+cd omniconv
 ```
 
-## Adding an app
+## What is left here
 
-1. Create `<app>/` with its own `README.md`, tests and, if it has data or
-   local configuration, its own `.gitignore`.
-2. Add `.github/workflows/<app>.yml` with `paths: ["<app>/**",
-   ".github/workflows/<app>.yml"]` and `defaults.run.working-directory:
-   <app>`, so it runs only for its own changes.
-3. Add a row to the table above.
+The folders in this repository are the apps as they were when they were
+split out on 2026-11-19, and they are no longer updated. Work, issues and
+pull requests go to the repositories above.
 
-## License
-
-omniconv is MIT-licensed ([omniconv/LICENSE](omniconv/LICENSE)). See each
-app's folder for its terms.
+The ESP8266 sketch was never merged into this branch; it is on the
+`claude/bold-hypatia-jl0478` branch here.
