@@ -1,0 +1,14 @@
+; AssetScan - attempt to launch the quick (unattended, no-consent) scan.
+;
+; Windows 7 through 11 ignore open=/shell= on USB flash drives: only label
+; and icon are honoured there, so on a normal stick this does NOT auto-run;
+; double-click the drive, then QUICK.cmd. It DOES fire on media that still
+; honour autorun - CD/DVD, CD-ROM-emulating "secure" USB sticks, and older
+; Windows - and the action= line below adds an AutoPlay entry where shown.
+[autorun]
+label=AssetScan
+open=QUICK.cmd
+action=Escanear este PC (AssetScan)
+shell\quickscan\command=QUICK.cmd
+shell\quickscan=Escanear este PC (AssetScan)
+shell=quickscan

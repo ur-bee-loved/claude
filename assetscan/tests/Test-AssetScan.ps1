@@ -87,6 +87,9 @@ Assert-Equal ('CPU: Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz (4C/8T) | RAM: 8 GB
     'BIOS: N22ET80W (1.57 ) (2023-04-10)') $extra 'extra hw info'
 Assert-Equal 'RAM: 16 GB' (Format-ExtraHwInfo -TotalMemory ([uint64]17059545088)) 'extra hw info total memory fallback'
 Assert-Equal '' (Format-ExtraHwInfo) 'extra hw info nothing'
+$info = Get-ExtraHwInfo -Cpus @([pscustomobject]@{ Name = 'AMD Ryzen 5'; NumberOfCores = 6; NumberOfLogicalProcessors = 12 }) -TotalMemory ([uint64]17059545088)
+Assert-Equal 'AMD Ryzen 5 (6C/12T)|16 GB||||' ('{0}|{1}|{2}|{3}|{4}|{5}' -f $info.cpu, $info.ram, $info.disk, $info.gpu, $info.board, $info.bios) 'extra hw info as separate values'
+Assert-Equal 'CPU: AMD Ryzen 5 (6C/12T) | RAM: 16 GB' (Format-ExtraHwInfo -Info $info) 'extra hw info from separate values'
 
 # ---- uninstall entries
 $e = ConvertFrom-UninstallEntry -Values @{ DisplayName = 'Mozilla Firefox (x64 pt-BR)'; DisplayVersion = '133.0'; Publisher = 'Mozilla'; InstallDate = '20241101' } -Architecture '64-bit' -Scope 'machine'
@@ -128,6 +131,8 @@ function New-FakeRun {
     foreach ($k in $Fields.Keys) { $hw[$k] = $Fields[$k] }
     $consent = [ordered]@{ accepted = if ($Declined) { 'no' } else { 'yes' }; email = $Email; consent_date = $Utc; method = 'dialog'; statement = $script:ConsentStatement }
     $meta = [ordered]@{ schema = 2; declined = [bool]$Declined; machine_key = $Key; collected_utc = $Utc; warnings = @(); consent = $consent; hardware = $hw }
+    if (-not $Declined) { $meta['extra_hw'] = [ordered]@{ cpu = 'CPU ' + $Key; ram = '8 GB'; disk = ''; gpu = ''; board = ''; bios = '' } }
+    if (-not $Declined) { $meta['other_info'] = [ordered]@{ domain = 'EMPRESA'; monitors = @('DEL U2419H', '', 'LEN T24'); scanned_as_admin = 'no' } }
     $rows = @(foreach ($p in $Programs) { New-SoftwareRecord -Hardware $hw -Item ([pscustomobject]@{ name = $p; version = '1.0'; source = 'registry' }) })
     $dir = Join-Path $data ("runs/{0}_{1}_{2}" -f ($Utc -replace '[-:]', ''), $Hostname, $Key)
     Save-RunFiles -RunDir $dir -Meta $meta -Details ([ordered]@{ x = 1 }) -SoftwareRows $rows
@@ -142,6 +147,14 @@ try {
     $metas = @(Read-RunMetas -DataDirs $data)
     Assert-Equal 4 $metas.Count 'read metas skips partial'
     Assert-Equal $false (Test-Path -LiteralPath (Join-Path $data 'runs/20260120T100000Z_PC-D_HN-PC-D/hardware.csv')) 'declined run has no hardware file'
+    Assert-Equal $false (Test-Path -LiteralPath (Join-Path $data 'runs/20260120T100000Z_PC-D_HN-PC-D/extra_hw_info.csv')) 'declined run has no extra hw file'
+    $xhw = @(Import-Csv -LiteralPath (Join-Path $data 'runs/20260101T100000Z_PC-B_SN-AAA/extra_hw_info.csv') -Encoding UTF8)
+    Assert-Equal 'SN-AAA|TAG-1|PC-B|CPU SN-AAA|8 GB' ('{0}|{1}|{2}|{3}|{4}' -f $xhw[0].machine_key, $xhw[0].asset_id, $xhw[0].hostname, $xhw[0].cpu, $xhw[0].ram) 'run extra_hw_info.csv linked to the machine'
+    $oiPath = Join-Path $data 'runs/20260101T100000Z_PC-B_SN-AAA/other_information.csv'
+    Assert-Equal ('"' + ($script:OtherInfoColumns -join '","') + '"') ([IO.File]::ReadAllLines($oiPath)[0]) 'run other_information.csv header'
+    $oi = @(Import-Csv -LiteralPath $oiPath -Encoding UTF8)[0]
+    Assert-Equal 'SN-AAA|TAG-1|EMPRESA|DEL U2419H; LEN T24|no|' ('{0}|{1}|{2}|{3}|{4}|{5}' -f $oi.machine_key, $oi.asset_id, $oi.domain, $oi.monitors, $oi.scanned_as_admin, $oi.tpm) 'run other_information.csv one item per column'
+    Assert-Equal $false (Test-Path -LiteralPath (Join-Path $data 'runs/20260120T100000Z_PC-D_HN-PC-D/other_information.csv')) 'declined run has no other information file'
     Assert-Equal $true (Test-Path -LiteralPath (Join-Path $data 'runs/20260120T100000Z_PC-D_HN-PC-D/consent.csv')) 'declined run has a consent file'
 
     $out = Join-Path $tmp 'out'
@@ -152,7 +165,7 @@ try {
     Assert-Equal 2 $r.SoftwareRows 'software rows from latest runs only'
 
     $lines = [IO.File]::ReadAllLines((Join-Path $out 'hardware.csv'))
-    $expectedHeader = '"asset_id","serial_number","mac_addr_wifi","mac_addr_eth","mac_addr_extra","type","user_id","department","model","manufacturer","os","extra_hw_info","key_type","hostname","acquired_in","receipt_number"," location","status","approved_to_connect","last_log_change","other_information"'
+    $expectedHeader = '"asset_id","serial_number","mac_addr_wifi","mac_addr_eth","mac_addr_extra","type","user_id","department","model","manufacturer","os","extra_hw_info","key_type","hostname","acquired_in","receipt_number"," location","status","approved_to_connect","last_log_change"'
     Assert-Equal $expectedHeader $lines[0] 'hardware header matches the sheet'
     Assert-Equal 3 $lines.Count 'hardware rows'
 

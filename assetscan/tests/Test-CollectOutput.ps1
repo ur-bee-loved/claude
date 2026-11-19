@@ -10,7 +10,7 @@ $runs = @(Get-ChildItem -LiteralPath (Join-Path $DataDir 'runs') -Directory)
 if ($runs.Count -ne $ExpectRuns) { $failures += "expected $ExpectRuns run folder(s), found $($runs.Count)" }
 foreach ($r in $runs) {
     if ($r.Name -like '*.partial') { $failures += "unfinished run left behind: $($r.Name)" }
-    foreach ($f in 'meta.json', 'details.json', 'hardware.csv', 'software.csv', 'software_detail.csv', 'consent.csv', 'run.log') {
+    foreach ($f in 'meta.json', 'details.json', 'hardware.csv', 'extra_hw_info.csv', 'other_information.csv', 'software.csv', 'software_detail.csv', 'consent.csv', 'run.log') {
         if (-not (Test-Path -LiteralPath (Join-Path $r.FullName $f))) { $failures += "$($r.Name) is missing $f" }
     }
 }
@@ -20,7 +20,7 @@ $lines = @([IO.File]::ReadAllLines($hwPath))
 if ($lines.Count -ne 2) { $failures += "hardware.csv should have 1 machine, has $($lines.Count - 1) row(s)" }
 $hw = @(Import-Csv -LiteralPath $hwPath -Encoding UTF8)[0]
 if ($hw.hostname -ne $env:COMPUTERNAME) { $failures += "hostname '$($hw.hostname)' is not '$env:COMPUTERNAME'" }
-foreach ($c in 'os', 'manufacturer', 'model', 'type', 'user_id', 'last_log_change', 'other_information') {
+foreach ($c in 'os', 'manufacturer', 'model', 'type', 'user_id', 'last_log_change') {
     if (-not $hw.$c) { $failures += "hardware column $c is empty" }
 }
 if ($ExpectAssetId -and $hw.asset_id -ne $ExpectAssetId) { $failures += "asset_id '$($hw.asset_id)' is not '$ExpectAssetId'" }

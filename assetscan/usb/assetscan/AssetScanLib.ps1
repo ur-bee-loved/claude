@@ -23,7 +23,6 @@ $script:HardwareHeaders = [ordered]@{
     status              = 'status'
     approved_to_connect = 'approved_to_connect'
     last_log_change     = 'last_log_change'
-    other_information   = 'other_information'
 }
 
 # Internal field name -> column header in the asset_manager_v3 software sheet.
@@ -62,7 +61,24 @@ $script:ConsentStatement = [regex]::Unescape('Eu estou ciente de que algumas inf
 # Set to e.g. 'empresa.com.br' to accept only addresses of that domain.
 $script:ConsentEmailDomain = ''
 
-# Fields typed by the operator; a blank value in a newer run keeps the last non-blank one.
+# Columns of extra_hw_info.csv, written only in each run folder.
+$script:ExtraHwColumns = @('machine_key', 'asset_id', 'hostname', 'serial_number', 'last_log_change', 'cpu', 'ram', 'disk', 'gpu', 'board', 'bios')
+
+# Columns of other_information.csv, written only in each run folder: everything
+# collected that has no column in the hardware sheet, one item per column.
+$script:OtherInfoColumns = @(
+    'machine_key', 'asset_id', 'hostname', 'serial_number', 'last_log_change',
+    'domain', 'domain_joined', 'dns_hostname', 'system_family', 'system_sku', 'uuid',
+    'chassis_serial', 'board_serial', 'bios_asset_tag', 'bios_vendor', 'secure_boot', 'tpm',
+    'os_edition', 'os_language', 'os_install_date', 'last_boot', 'registered_owner', 'organization',
+    'time_zone', 'license_status', 'firmware_product_key', 'memory_modules', 'disks', 'volumes',
+    'network_adapters', 'ip_config', 'gpu_drivers', 'monitors', 'battery', 'antivirus', 'printers',
+    'scanned_by', 'scanned_as_admin'
+)
+
+$script:FinishLabel = [regex]::Unescape('Finalizar aquisi\u00e7\u00e3o')
+
+# Fields not collected from the machine (previous run or parameter); a blank value in a newer run keeps the last non-blank one.
 $script:OperatorFields = @('asset_id', 'department', 'location')
 
 $script:ChassisLabels = @{
@@ -242,9 +258,10 @@ function Format-DiskSummary {
     return $model
 }
 
-function Format-ExtraHwInfo {
+# CPU, RAM, disks, GPU, board and BIOS, one value each (blank when unknown).
+function Get-ExtraHwInfo {
     param($Cpus, $MemoryModules, $TotalMemory, $Disks, $Gpus, $Board, $Bios)
-    $parts = New-Object System.Collections.Generic.List[string]
+    $info = [ordered]@{ cpu = ''; ram = ''; disk = ''; gpu = ''; board = ''; bios = '' }
 
     $cpuText = @(foreach ($c in @($Cpus)) {
         if ($null -eq $c) { continue }
@@ -253,7 +270,7 @@ function Format-ExtraHwInfo {
         $threads = Get-Prop $c 'NumberOfLogicalProcessors'
         if ($cores -and $threads) { "$n (${cores}C/${threads}T)" } else { $n }
     }) -join ' + '
-    if ($cpuText) { $parts.Add("CPU: $cpuText") }
+    $info.cpu = $cpuText
 
     [uint64]$bytes = 0
     $modCount = 0
@@ -263,13 +280,13 @@ function Format-ExtraHwInfo {
     }
     if ($bytes -eq 0 -and $TotalMemory) { $bytes = [uint64]$TotalMemory }
     if ($bytes -gt 0) {
-        $ram = 'RAM: {0} GB' -f [math]::Round($bytes / 1GB)
+        $ram = '{0} GB' -f [math]::Round($bytes / 1GB)
         if ($modCount -eq 1) { $ram += ' (1 module)' } elseif ($modCount -gt 1) { $ram += " ($modCount modules)" }
-        $parts.Add($ram)
+        $info.ram = $ram
     }
 
     $diskText = @(foreach ($d in @($Disks)) { if ($null -ne $d) { Format-DiskSummary $d } }) -join ' + '
-    if ($diskText) { $parts.Add("Disk: $diskText") }
+    $info.disk = $diskText
 
     $skipGpu = '(?i)microsoft basic display|microsoft remote display|remote desktop|mirage driver|dameware|citrix indirect|parsec virtual|virtual display'
     $gpuAll = @(foreach ($g in @($Gpus)) {
@@ -277,18 +294,46 @@ function Format-ExtraHwInfo {
         if ($n -and $n -notmatch $skipGpu) { $n }
     })
     $gpuNames = @($gpuAll | Select-Object -Unique)
-    if ($gpuNames.Count) { $parts.Add('GPU: ' + ($gpuNames -join ' + ')) }
+    $info.gpu = $gpuNames -join ' + '
 
     $boardText = ('{0} {1}' -f (ConvertTo-CleanText (Get-Prop $Board 'Manufacturer')), (ConvertTo-CleanText (Get-Prop $Board 'Product'))).Trim()
-    if ($boardText) { $parts.Add("Board: $boardText") }
+    $info.board = $boardText
 
     $biosVer = ConvertTo-CleanText (Get-Prop $Bios 'SMBIOSBIOSVersion')
     $biosDate = Get-Prop $Bios 'ReleaseDate'
     if ($biosVer) {
         if ($biosDate -is [datetime]) { $biosVer += ' (' + $biosDate.ToString('yyyy-MM-dd') + ')' }
-        $parts.Add("BIOS: $biosVer")
+        $info.bios = $biosVer
     }
+    return $info
+}
+
+# The same as one cell: "CPU: ... | RAM: ... | ...".
+function Format-ExtraHwInfo {
+    param($Cpus, $MemoryModules, $TotalMemory, $Disks, $Gpus, $Board, $Bios, [System.Collections.IDictionary]$Info)
+    if ($null -eq $Info) {
+        $Info = Get-ExtraHwInfo -Cpus $Cpus -MemoryModules $MemoryModules -TotalMemory $TotalMemory -Disks $Disks -Gpus $Gpus -Board $Board -Bios $Bios
+    }
+    $labels = [ordered]@{ cpu = 'CPU'; ram = 'RAM'; disk = 'Disk'; gpu = 'GPU'; board = 'Board'; bios = 'BIOS' }
+    $parts = @(foreach ($k in $labels.Keys) { if ($Info[$k]) { '{0}: {1}' -f $labels[$k], $Info[$k] } })
     return ($parts -join ' | ')
+}
+
+# One row for the run folder's extra_hw_info.csv, linked to the machine by
+# machine_key (same as the run folder name), asset_id, hostname and serial_number.
+function ConvertTo-ExtraHwRecord {
+    param($Meta)
+    $hw = Get-Prop $Meta 'hardware'
+    $info = Get-Prop $Meta 'extra_hw'
+    $o = [ordered]@{
+        machine_key     = [string](Get-Prop $Meta 'machine_key')
+        asset_id        = [string](Get-Prop $hw 'asset_id')
+        hostname        = [string](Get-Prop $hw 'hostname')
+        serial_number   = [string](Get-Prop $hw 'serial_number')
+        last_log_change = [string](Get-Prop $hw 'last_log_change')
+    }
+    foreach ($k in 'cpu', 'ram', 'disk', 'gpu', 'board', 'bios') { $o[$k] = [string](Get-Prop $info $k) }
+    [pscustomobject]$o
 }
 
 function ConvertFrom-UninstallEntry {
@@ -354,6 +399,16 @@ function ConvertTo-SoftwareSheetRecord {
     return [pscustomobject]$o
 }
 
+# One value as text; lists are joined with "; " and their empty items left out.
+function ConvertTo-InfoText {
+    param($Value)
+    if ($null -eq $Value) { return '' }
+    if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) {
+        return (@(foreach ($x in $Value) { $t = ConvertTo-CleanText $x; if ($t) { $t } }) -join '; ')
+    }
+    return (ConvertTo-CleanText $Value)
+}
+
 # Ordered name -> value pairs as one cell: "name: value | name: value".
 # Lists are joined with "; ", empty values are left out.
 function Format-OtherInfo {
@@ -361,20 +416,33 @@ function Format-OtherInfo {
     $parts = New-Object System.Collections.Generic.List[string]
     if ($null -eq $Items) { return '' }
     foreach ($k in @($Items.Keys)) {
-        $v = $Items[$k]
-        if ($null -eq $v) { continue }
-        if ($v -is [System.Collections.IEnumerable] -and $v -isnot [string]) {
-            $text = @(foreach ($x in $v) { $t = ConvertTo-CleanText $x; if ($t) { $t } }) -join '; '
-        } else {
-            $text = ConvertTo-CleanText $v
-        }
-        $text = $text -replace '\|', '/'
+        $text = (ConvertTo-InfoText $Items[$k]) -replace '\|', '/'
         if ($text -eq '') { continue }
         $parts.Add("${k}: $text")
     }
     $out = $parts -join ' | '
     if ($out.Length -gt $MaxLength) { $out = $out.Substring(0, $MaxLength - 3) + '...' }
     return $out
+}
+
+# One row for the run folder's other_information.csv, linked to the machine the
+# same way as extra_hw_info.csv.
+function ConvertTo-OtherInfoRecord {
+    param($Meta)
+    $hw = Get-Prop $Meta 'hardware'
+    $info = Get-Prop $Meta 'other_info'
+    $o = [ordered]@{
+        machine_key     = [string](Get-Prop $Meta 'machine_key')
+        asset_id        = [string](Get-Prop $hw 'asset_id')
+        hostname        = [string](Get-Prop $hw 'hostname')
+        serial_number   = [string](Get-Prop $hw 'serial_number')
+        last_log_change = [string](Get-Prop $hw 'last_log_change')
+    }
+    foreach ($k in $script:OtherInfoColumns) {
+        if ($o.Contains($k)) { continue }
+        $o[$k] = ConvertTo-InfoText (Get-Prop $info $k)
+    }
+    [pscustomobject]$o
 }
 
 function ConvertFrom-WmiCharArray {
@@ -496,6 +564,12 @@ function Save-RunFiles {
     if ($null -ne $Details) { Write-JsonFile -Path (Join-Path $RunDir 'details.json') -Object $Details -Depth 8 }
     $hwRecord = ConvertTo-HardwareRecord (Get-Prop $Meta 'hardware')
     Write-CsvFile -Path (Join-Path $RunDir 'hardware.csv') -Columns @($script:HardwareHeaders.Values) -Rows @($hwRecord)
+    if ($null -ne (Get-Prop $Meta 'extra_hw')) {
+        Write-CsvFile -Path (Join-Path $RunDir 'extra_hw_info.csv') -Columns $script:ExtraHwColumns -Rows @(ConvertTo-ExtraHwRecord $Meta)
+    }
+    if ($null -ne (Get-Prop $Meta 'other_info')) {
+        Write-CsvFile -Path (Join-Path $RunDir 'other_information.csv') -Columns $script:OtherInfoColumns -Rows @(ConvertTo-OtherInfoRecord $Meta)
+    }
     Write-CsvFile -Path (Join-Path $RunDir 'software_detail.csv') -Columns $script:SoftwareColumns -Rows $SoftwareRows
     $sheetRows = @(foreach ($r in @($SoftwareRows)) { if ($null -ne $r) { ConvertTo-SoftwareSheetRecord -Detail $r -Hardware (Get-Prop $Meta 'hardware') } })
     Write-CsvFile -Path (Join-Path $RunDir 'software.csv') -Columns @($script:SoftwareHeaders.Values) -Rows $sheetRows
@@ -880,6 +954,70 @@ function Show-ConsentDialog {
     } finally {
         $form.Dispose()
     }
+}
+
+# Shows the results; the window closes only through the "Finalizar aquisicao" button.
+function Show-ResultDialog {
+    param([string]$Heading, [System.Collections.IDictionary]$Rows, [string]$Footer)
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    [System.Windows.Forms.Application]::EnableVisualStyles()
+
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = 'assetscan'
+    $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
+    $form.ControlBox = $false
+    $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+    $form.TopMost = $true
+    $form.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+    $form.ClientSize = New-Object System.Drawing.Size(640, 520)
+
+    $title = New-Object System.Windows.Forms.Label
+    $title.Text = $Heading
+    $title.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold)
+    $title.Location = New-Object System.Drawing.Point(20, 15)
+    $title.Size = New-Object System.Drawing.Size(600, 28)
+
+    $list = New-Object System.Windows.Forms.ListView
+    $list.View = [System.Windows.Forms.View]::Details
+    $list.FullRowSelect = $true
+    $list.GridLines = $true
+    $list.HeaderStyle = [System.Windows.Forms.ColumnHeaderStyle]::Nonclickable
+    $list.Location = New-Object System.Drawing.Point(20, 50)
+    $list.Size = New-Object System.Drawing.Size(600, 360)
+    [void]$list.Columns.Add('Campo', 150)
+    [void]$list.Columns.Add('Valor', 425)
+    if ($null -ne $Rows) {
+        foreach ($k in @($Rows.Keys)) {
+            $item = New-Object System.Windows.Forms.ListViewItem([string]$k)
+            [void]$item.SubItems.Add([string]$Rows[$k])
+            [void]$list.Items.Add($item)
+        }
+    }
+
+    $footerBox = New-Object System.Windows.Forms.TextBox
+    $footerBox.Text = $Footer
+    $footerBox.ReadOnly = $true
+    $footerBox.Multiline = $true
+    $footerBox.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+    $footerBox.BackColor = $form.BackColor
+    $footerBox.Location = New-Object System.Drawing.Point(20, 420)
+    $footerBox.Size = New-Object System.Drawing.Size(600, 44)
+
+    $finish = New-Object System.Windows.Forms.Button
+    $finish.Text = $script:FinishLabel
+    $finish.Location = New-Object System.Drawing.Point(440, 474)
+    $finish.Size = New-Object System.Drawing.Size(180, 34)
+
+    $state = @{ Done = $false }
+    $finish.add_Click({ $state.Done = $true; $form.Close() })
+    # Alt+F4 and the like do nothing; only the button ends it.
+    $form.add_FormClosing({ param($s, $e) if (-not $state.Done -and $e.CloseReason -eq [System.Windows.Forms.CloseReason]::UserClosing) { $e.Cancel = $true } })
+    $form.add_Shown({ $form.Activate(); $finish.Focus() | Out-Null })
+    $form.Controls.AddRange(@($title, $list, $footerBox, $finish))
+    $form.AcceptButton = $finish
+
+    try { [void]$form.ShowDialog() } finally { $form.Dispose() }
 }
 
 function Get-SecureBootState {
