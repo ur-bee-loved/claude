@@ -4,19 +4,19 @@ A USB-stick inventory collector for Windows. Each time it runs on a computer, it
 that computer's hardware and installed programs onto the stick. It then rebuilds two
 spreadsheets covering every machine collected so far:
 
-- `hardware.csv` uses the columns of the `asset_manager_v3 - hardware` sheet,
-  plus a last column, `other_information`.
+- `hardware.csv` uses exactly the columns of the `asset_manager_v3 - hardware` sheet.
+  Everything else collected about the machine goes to `extra_hw_info.csv` and
+  `other_information.csv` in each run folder, one item per column.
 - `software.csv` uses the columns of the `asset_manager_v3 - software` sheet,
   plus `other_information`, with one row per installed program per machine.
-
-`other_information` holds everything collected that has no column of its own,
-as `name: value | name: value`. Add an `other_information` column at the end of
-both sheets so pasted rows line up.
+  That cell holds the program's details as `name: value | name: value`; add an
+  `other_information` column at the end of the software sheet so pasted rows line up.
 - `software_detail.csv` holds the same programs with hostname, serial number,
   install date and scope, so they can be matched to a machine even when
   `asset_id` is blank.
-- `consent.csv` holds one row per run with the user's corporate e-mail and
-  whether they accepted the consent window, linked to the device.
+- `consent.csv` holds one row per run: the user's corporate e-mail and whether
+  they accepted the consent window (or `skipped`, for an unattended run), linked
+  to the device.
 
 It runs on Windows PowerShell 5.1, which is built into Windows 10 and 11, so nothing
 is installed on the computer being inventoried. It uses no admin rights and no
@@ -28,8 +28,9 @@ Copy the **contents** of `usb/` to the root of the USB drive:
 
 ```
 E:\
-  QUICK.cmd            double-click on each computer: consent window only, closes itself
-  RUN.cmd              same, then asks for asset_id / department / location
+  autorun.inf          label, and an autorun attempt where the hardware still allows it (see Autorun)
+  RUN.cmd              double-click on each computer: consent, then a results window
+  QUICK.cmd            unattended: no consent, no results window; the console closes itself after 5 seconds
   EXPORT.cmd           double-click to make a dated export copy
   assetscan\           the scripts
   assetscan-data\      created on first run
@@ -43,21 +44,29 @@ disabled until a valid e-mail is typed. **Recusar**, or closing the window,
 stops the run before anything is read from the computer (see
 [Consent](#consent)).
 
-**Fastest:** plug the stick in, double-click `QUICK.cmd`, and let the user
-accept the window. Unplug once the console window closes itself. It asks
-nothing else; `asset_id`, `department` and `location` keep their previous
-values, and you fill the rest in the sheet later.
+1. Plug the stick in and double-click `RUN.cmd`. On most machines Windows
+   will not start it on its own (see [Autorun](#autorun)), so open the drive
+   and double-click it.
+2. Let the user accept the consent window.
+3. After 10–60 seconds a results window (*Aquisição concluída*) lists what was
+   collected and where it was saved. It closes only with **Finalizar aquisição**;
+   the console window closes with it. Then unplug the stick.
 
-**With questions:**
+If the user refuses consent, a *Coleta recusada* window says nothing was
+collected, and also closes with **Finalizar aquisição**. If the run fails, the
+console window stays open with the error until a key is pressed.
 
-1. Plug the stick in and double-click `RUN.cmd`. Windows does not autorun
-   programs from USB drives (see [Why there is no autorun](#why-there-is-no-autorun)),
-   so it must be started by hand.
-2. After the consent window, it asks for `asset_id`, `department` and `location`:
-   - Press Enter to keep the value shown in brackets. That value comes from the
-     last time this machine was collected.
-   - Type `-` to clear the value.
-3. It takes about 10–60 seconds, then prints a summary. Press a key to close.
+**Fastest / unattended:** `QUICK.cmd`. It collects the same data but shows
+**no consent window and no results window** — it just runs, prints a short
+summary, and closes itself 5 seconds later. This is the launcher `autorun.inf`
+points at, so wherever autorun still fires (see [Autorun](#autorun)) the scan
+starts on its own. Because it skips the notice, use it only on company-owned
+machines where that is acceptable; the run is still recorded in `consent.csv`
+with `method=skipped`.
+
+Neither one asks anything else. `asset_id`, `department` and `location` keep
+the values from the last time this machine was collected (blank the first
+time); fill them in the sheet later, or pass them on the command line.
 
 Repeat on every computer. To bring the data together, either take
 `E:\assetscan-data\hardware.csv`, `software.csv` and `consent.csv` directly (they are always up
@@ -67,8 +76,9 @@ to date), or double-click `EXPORT.cmd` for a dated copy in
 Command-line options (from PowerShell in `E:\assetscan`):
 
 ```powershell
-.\Collect.ps1 -NoPrompt                                  # unattended, keeps previous asset_id/department/location
 .\Collect.ps1 -AssetId PAT-0412 -Department TI -Location "Sala 3"
+.\Collect.ps1 -NoResultDialog                            # results in the console only, no window to close (scripts, remote runs)
+.\Collect.ps1 -SkipConsent                              # unattended: collect with no consent window, recorded as method=skipped
 .\Collect.ps1 -ConsentEmail maria@empresa.com.br         # consent given another way (paper, e-mail): no window, method=parameter
 .\Export.ps1 -DataDir E:\assetscan-data, F:\assetscan-data -OutDir C:\inventario   # merge several sticks
 .\Export.ps1 -Delimiter ';'                              # for Excel with a pt-BR/European list separator
@@ -90,6 +100,8 @@ assetscan-data\
       meta.json             the hardware row + run information (read by the merge)
       details.json          everything collected, in more detail than the sheet holds
       hardware.csv          this run only
+      extra_hw_info.csv     this run only: CPU, RAM, disk, GPU, board, BIOS in separate columns
+      other_information.csv this run only: everything else collected, one item per column
       software.csv          this run only (software sheet columns)
       software_detail.csv   this run only (detail; read by the merge)
       consent.csv           this run's consent answer
@@ -125,28 +137,34 @@ Every other column always comes from the latest run.
 
 | Column | Source | Notes |
 |---|---|---|
-| asset_id | typed by operator; default: previous run | the BIOS asset tag is not used; if one is set it goes to `other_information` |
+| asset_id | previous run, or `-AssetId` | the BIOS asset tag is not used; if one is set it goes to `bios_asset_tag` in `other_information.csv` |
 | serial_number | `Win32_BIOS.SerialNumber` → `Win32_ComputerSystemProduct.IdentifyingNumber` → `Win32_SystemEnclosure.SerialNumber` | placeholders discarded |
 | mac_addr_wifi | `Get-NetAdapter -Physical`, `NdisPhysicalMedium` = 9 (802.11) | built-in (PCI) adapter preferred |
 | mac_addr_eth | same, `NdisPhysicalMedium` = 14 (802.3) | built-in preferred over USB docks |
 | mac_addr_extra | every other physical adapter (USB Ethernet, Bluetooth, 2nd NIC) | separated by `; ` |
 | type | `Win32_SystemEnclosure.ChassisTypes` → `Win32_ComputerSystem.PCSystemType` | Desktop, Laptop, Tablet, All-in-One, Mini PC, Server, Virtual Machine, Unknown |
 | user_id | `Win32_ComputerSystem.UserName` (console user), domain removed | falls back to the account running the script |
-| department | typed by operator | |
+| department | previous run, or `-Department` | |
 | model | `Win32_ComputerSystem.Model` | Lenovo: `ComputerSystemProduct.Version (Model)`, e.g. `ThinkPad T480 (20L5S0XX00)` |
 | manufacturer | `Win32_ComputerSystem.Manufacturer` | |
 | os | `Win32_OperatingSystem.Caption` + `DisplayVersion` + build.UBR + bitness | e.g. `Microsoft Windows 11 Pro 23H2 (build 22631.4460, 64-bit)` |
-| extra_hw_info | CPU, RAM, disks, GPU, motherboard, BIOS | `\|`-separated summary; full detail in `details.json` |
+| extra_hw_info | CPU, RAM, disks, GPU, motherboard, BIOS | `\|`-separated summary; one column each in the run's `extra_hw_info.csv` |
 | key_type | `SoftwareLicensingProduct.ProductKeyChannel` of Windows | `OEM:DM`, `Retail`, `Volume:MAK`, `Volume:GVLK`, … The key itself is **not** recorded |
 | hostname | `Win32_ComputerSystem.Name` | |
 | acquired_in, receipt_number, status, approved_to_connect | left blank | cannot be read from the machine |
-| ` location` | typed by operator | the header has a leading space, as in the sheet |
+| ` location` | previous run, or `-Location` | the header has a leading space, as in the sheet |
 | last_log_change | local time of the collection | `yyyy-MM-dd HH:mm:ss` |
-| other_information | everything else, see below | not in the sheet yet |
 
-`other_information` in `hardware.csv` (an entry is left out when it is empty):
+### other_information.csv (run folder only)
 
-| Entry | Source |
+Each run folder has `other_information.csv`: one row with everything collected
+that has no column in the hardware sheet, one item per column. It starts with
+the same link columns as `extra_hw_info.csv` (`machine_key`, `asset_id`,
+`hostname`, `serial_number`, `last_log_change`); a value is blank when it could
+not be read. Items holding several things (modules, disks, monitors, …) list
+them separated by `; `. It is not merged into a top-level file.
+
+| Column | Source |
 |---|---|
 | domain, domain_joined, dns_hostname | `Win32_ComputerSystem` (dns_hostname only when it differs from hostname) |
 | system_family, system_sku, uuid | `Win32_ComputerSystem`, `Win32_ComputerSystemProduct` |
@@ -168,6 +186,23 @@ Every other column always comes from the latest run.
 
 `details.json` in each run folder keeps the same data with one field per value,
 for when the cell is not enough.
+
+### extra_hw_info.csv (run folder only)
+
+Each run folder also has `extra_hw_info.csv`: the `extra_hw_info` cell split
+into one column per item. It is not merged into a top-level file.
+
+| Column | Value |
+|---|---|
+| machine_key | the machine's key, also the end of the run folder name |
+| asset_id, hostname, serial_number | the same as this run's `hardware.csv`, to link it to the computer |
+| last_log_change | when this run happened |
+| cpu | each processor with cores/threads |
+| ram | total RAM and module count |
+| disk | each internal disk: model, type, size |
+| gpu | each graphics adapter (remote/virtual displays left out) |
+| board | motherboard maker and model |
+| bios | BIOS version and date |
 
 RAM is reported in binary GB (8 GiB → "8 GB"), as Windows shows it. Disks are
 reported in decimal GB (a "256 GB" SSD → "256 GB"), as the manufacturer labels
@@ -223,6 +258,7 @@ gives every program.
 |---|---|
 | **Aceitar** (valid e-mail typed) | Collection runs. One `consent.csv` row is written: `accepted=yes`, the e-mail, the date and time. |
 | **Recusar** or closing the window | Nothing is collected. One `consent.csv` row is written: `accepted=no`, hostname, date and time, with no e-mail. The run is left out of `hardware.csv` and `software.csv`. |
+| `QUICK.cmd` / `-SkipConsent` | No window is shown and collection runs. One `consent.csv` row is written: `accepted=skipped`, `method=skipped`, no e-mail and a blank statement, so the record shows the machine was collected without the notice. |
 
 `consent.csv` columns:
 
@@ -231,9 +267,9 @@ gives every program.
 | asset_id | the device's `asset_id` after merging, so every consent row of a device follows the current value |
 | serial_number, hostname, user_id | from the hardware row of the same run; blank after a refusal, except hostname |
 | email | typed in the window |
-| accepted | `yes` / `no` |
+| accepted | `yes` / `no` / `skipped` (no window was shown) |
 | consent_date | local date and time of the answer, `yyyy-MM-dd HH:mm:ss` |
-| method | `dialog` (the window) or `parameter` (`-ConsentEmail`) |
+| method | `dialog` (the window), `parameter` (`-ConsentEmail`), or `skipped` (`QUICK.cmd` / `-SkipConsent`) |
 | statement | the exact text shown, so the record still says what was agreed to if the text changes later |
 
 The table keeps **every** answer, not only the latest. A machine scanned three
@@ -250,19 +286,38 @@ The window needs someone sitting at the desktop, so the collector cannot be
 pushed to computers through Group Policy or run as SYSTEM. If it is started
 without a desktop, it stops with an error and collects nothing.
 `-ConsentEmail` is for consent collected another way; it is recorded as
-`method=parameter`.
+`method=parameter`. `-SkipConsent` (used by `QUICK.cmd`) collects with no
+notice at all and is recorded as `method=skipped`; it has no desktop
+requirement, so it can run over a remote session or as a scheduled task.
 
-## Why there is no autorun
+## Autorun
+
+The stick ships with an `autorun.inf` that tries to launch `QUICK.cmd`, but how
+far it gets depends entirely on the drive and the Windows version — there is no
+software-only way to make a plain USB flash drive run a program the moment it is
+plugged in.
 
 Since Windows 7, Windows ignores the `open=`/`shellexecute=` lines of
-`autorun.inf` on USB flash drives. For drives that are not CD/DVD, only `label`
-and `icon` are read. Microsoft backported this to XP and Vista in 2011
-(KB971029) because worms such as Conficker spread that way. Windows 10 and 11
-keep the same behaviour. Autorun still works for CD/DVD, but even there Windows
-10/11 shows an AutoPlay prompt rather than starting the program by itself.
-Some USB sticks present a read-only CD-ROM partition to get CD behaviour back.
-They still end at the same prompt, and many company security policies block
-them.
+`autorun.inf` on USB flash drives, and the `shell\…` double-click verbs are
+honoured only on CD/DVD media, not on removable drives. For a USB flash drive,
+only `label` and `icon` are read. Microsoft backported this to XP and Vista in
+2011 (KB971029) because worms such as Conficker spread that way, and Windows 10
+and 11 keep the behaviour. So on a normal stick the `autorun.inf` only sets the
+drive label; you still open the drive and double-click `RUN.cmd` or `QUICK.cmd`.
+
+The same `autorun.inf` **does** fire where autorun still exists:
+
+- CD/DVD media, and CD-ROM–emulating "secure" USB sticks (U3 and similar) that
+  present a read-only optical partition — there Windows reaches an AutoPlay
+  prompt whose entry (`action=`) runs the quick scan.
+- Older Windows, and machines where an admin has re-enabled autorun by policy.
+
+Everywhere else the file is read for the label and otherwise ignored, so it is
+harmless to leave on the stick. Because the launcher it points at is
+`QUICK.cmd`, any machine that *does* autorun collects with no prompts at all
+(see [Consent](#consent)); keep that in mind before relying on it. An
+`autorun.inf` that names a script can also trip antivirus or a USB-control
+policy; if that is a problem, delete `autorun.inf` and start the scan by hand.
 
 ## Limitations
 

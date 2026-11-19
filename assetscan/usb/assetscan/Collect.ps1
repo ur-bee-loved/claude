@@ -8,16 +8,21 @@
     -NoMerge skips that rebuild, for many computers writing to one network share at once.
     Nothing is read from the computer until the user accepts the consent window. -ConsentEmail
     records consent given some other way (on paper, by e-mail) and skips the window.
+    -SkipConsent collects with no consent at all (unattended / autorun), recorded as method=skipped.
+    At the end the results are shown in a window that closes only with "Finalizar aquisicao";
+    -NoResultDialog prints them to the console instead.
 #>
 [CmdletBinding()]
 param(
     [string]$DataDir,
-    [switch]$NoPrompt,
+    [switch]$NoPrompt,  # kept for old launchers; nothing is asked anymore
     [string]$AssetId,
     [string]$Department,
     [string]$Location,
     [switch]$NoMerge,
-    [string]$ConsentEmail
+    [string]$ConsentEmail,
+    [switch]$NoResultDialog,  # print the results only, for unattended runs and CI
+    [switch]$SkipConsent     # unattended: collect without the consent window (recorded as method=skipped)
 )
 
 $ErrorActionPreference = 'Continue'
@@ -78,6 +83,16 @@ function Complete-Run {
     return $finalDir
 }
 
+function Show-Result {
+    param([string]$Heading, [System.Collections.IDictionary]$Rows, [string]$Footer)
+    if ($NoResultDialog) { return }
+    try {
+        Show-ResultDialog -Heading $Heading -Rows $Rows -Footer $Footer
+    } catch {
+        Write-Log "The results window could not be shown: $($_.Exception.Message)" 'WARN'
+    }
+}
+
 # ---- consent comes before anything is read from the computer
 if ($PSBoundParameters.ContainsKey('ConsentEmail')) {
     if (-not (Test-CorporateEmail $ConsentEmail)) {
@@ -86,6 +101,9 @@ if ($PSBoundParameters.ContainsKey('ConsentEmail')) {
     }
     $answer = [pscustomobject]@{ Accepted = $true; Email = ConvertTo-CleanText $ConsentEmail }
     $consentMethod = 'parameter'
+} elseif ($SkipConsent) {
+    $answer = [pscustomobject]@{ Accepted = $true; Email = '' }
+    $consentMethod = 'skipped'
 } else {
     try {
         $answer = Show-ConsentDialog
@@ -96,11 +114,11 @@ if ($PSBoundParameters.ContainsKey('ConsentEmail')) {
     $consentMethod = 'dialog'
 }
 $consent = [ordered]@{
-    accepted     = if ($answer.Accepted) { 'yes' } else { 'no' }
+    accepted     = if ($consentMethod -eq 'skipped') { 'skipped' } elseif ($answer.Accepted) { 'yes' } else { 'no' }
     email        = if ($answer.Accepted) { $answer.Email } else { '' }
     consent_date = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     method       = $consentMethod
-    statement    = $script:ConsentStatement
+    statement    = if ($consentMethod -eq 'skipped') { '' } else { $script:ConsentStatement }
 }
 Write-Log "Consent: accepted=$($consent.accepted) email=$($consent.email) method=$consentMethod"
 
@@ -123,10 +141,13 @@ if (-not $answer.Accepted) {
     Write-Host ''
     Write-Host 'Coleta recusada: nenhuma informacao do sistema foi coletada.' -ForegroundColor Yellow
     Write-Host "Consent refusal recorded in $finalDir"
+    Show-Result -Heading ([regex]::Unescape('Coleta recusada')) `
+        -Rows ([ordered]@{ hostname = $env:COMPUTERNAME; resultado = [regex]::Unescape('nenhuma informa\u00e7\u00e3o do sistema foi coletada') }) `
+        -Footer "Recusa registrada em $finalDir"
     exit 0
 }
 
-# ---- identity (fast) first, so the operator can answer prompts while the rest runs
+# ---- identity first, to find this machine's previous runs
 $cs = Invoke-Section 'Win32_ComputerSystem' { Get-CimSafe -Class Win32_ComputerSystem | Select-Object -First 1 }
 $csp = Invoke-Section 'Win32_ComputerSystemProduct' { Get-CimSafe -Class Win32_ComputerSystemProduct | Select-Object -First 1 }
 $bios = Invoke-Section 'Win32_BIOS' { Get-CimSafe -Class Win32_BIOS | Select-Object -First 1 }
@@ -152,36 +173,16 @@ if ($prior.Count) {
 $assetTag = ConvertTo-CleanText (Get-Prop $enc 'SMBIOSAssetTag')
 if (Test-Placeholder $assetTag) { $assetTag = '' }
 
-function Read-Field {
-    param([string]$Label, [string]$Default)
-    $shown = ''
-    if ($Default) { $shown = " [$Default]" }
-    $answer = Read-Host "$Label$shown (Enter keeps, - clears)"
-    if ($null -eq $answer) { return $Default }
-    $answer = $answer.Trim()
-    if ($answer -eq '') { return $Default }
-    if ($answer -eq '-') { return '' }
-    return $answer
-}
-
-$defaults = @{
+# asset_id, department and location are never asked: they come from the parameters
+# when given, otherwise they keep the values from this machine's previous run.
+$operator = @{
     asset_id   = [string](Get-Prop $previous 'asset_id')
     department = [string](Get-Prop $previous 'department')
     location   = [string](Get-Prop $previous 'location')
 }
-
-$operator = @{}
-$given = @{ asset_id = $AssetId; department = $Department; location = $Location }
-$paramNames = @{ asset_id = 'AssetId'; department = 'Department'; location = 'Location' }
-foreach ($f in 'asset_id', 'department', 'location') {
-    if ($PSBoundParameters.ContainsKey($paramNames[$f])) {
-        $operator[$f] = $given[$f]
-    } elseif ($NoPrompt) {
-        $operator[$f] = $defaults[$f]
-    } else {
-        $operator[$f] = Read-Field -Label $f -Default $defaults[$f]
-    }
-}
+if ($PSBoundParameters.ContainsKey('AssetId')) { $operator['asset_id'] = $AssetId }
+if ($PSBoundParameters.ContainsKey('Department')) { $operator['department'] = $Department }
+if ($PSBoundParameters.ContainsKey('Location')) { $operator['location'] = $Location }
 
 # ---- everything else
 Write-Log 'Collecting hardware and software, this can take up to a minute...'
@@ -239,7 +240,8 @@ $hw['department'] = $operator['department']
 $hw['model'] = Get-ModelName -Manufacturer $manufacturer -Model $rawModel -Version (Get-Prop $csp 'Version')
 $hw['manufacturer'] = $manufacturer
 $hw['os'] = $osText
-$hw['extra_hw_info'] = Format-ExtraHwInfo -Cpus $cpus -MemoryModules $mem -TotalMemory (Get-Prop $cs 'TotalPhysicalMemory') -Disks $disks -Gpus $gpus -Board $board -Bios $bios
+$extraHw = Get-ExtraHwInfo -Cpus $cpus -MemoryModules $mem -TotalMemory (Get-Prop $cs 'TotalPhysicalMemory') -Disks $disks -Gpus $gpus -Board $board -Bios $bios
+$hw['extra_hw_info'] = Format-ExtraHwInfo -Info $extraHw
 $hw['key_type'] = [string](Get-Prop $license 'Channel')
 $hw['hostname'] = $hostname
 $hw['location'] = $operator['location']
@@ -326,7 +328,6 @@ $other['antivirus'] = @(foreach ($av in $antivirus) { if ($null -ne $av) { Conve
 $other['printers'] = @(foreach ($pr in $printers) { if ($null -ne $pr) { ConvertTo-CleanText (Get-Prop $pr 'Name') } })
 $other['scanned_by'] = "$env:USERDOMAIN\$env:USERNAME"
 $other['scanned_as_admin'] = Format-YesNo $elevated
-$hw['other_information'] = Format-OtherInfo $other
 
 $allSoftware = @(@($software) + @($storeApps) | Where-Object { $null -ne $_ } | Sort-Object -Property name, version)
 $softwareRows = @(foreach ($s in $allSoftware) { New-SoftwareRecord -Hardware $hw -Item $s })
@@ -368,20 +369,28 @@ $meta = [ordered]@{
     warnings        = @($script:Warnings)
     consent         = $consent
     hardware        = $hw
+    extra_hw        = $extraHw
+    other_info      = $other
 }
 
 $finalDir = Complete-Run -Meta $meta -FinalName "${stamp}_${hostToken}_$($identity.Key)" -Details $details -SoftwareRows $softwareRows
 Write-Log "Saved run files ($($softwareRows.Count) programs)"
 
+$summary = [ordered]@{ email = $consent.email }
+foreach ($k in 'asset_id', 'hostname', 'serial_number', 'type', 'manufacturer', 'model', 'os', 'user_id', 'mac_addr_wifi', 'mac_addr_eth', 'key_type') {
+    $summary[$k] = $hw[$k]
+}
+foreach ($k in 'cpu', 'ram', 'disk', 'gpu') { $summary[$k] = $extraHw[$k] }
+$summary['programs'] = $softwareRows.Count
+
 Write-Host ''
 Write-Host '==================== DONE ====================' -ForegroundColor Green
-Write-Host ('{0,-15} {1}' -f 'email', $consent.email)
-foreach ($k in 'asset_id', 'hostname', 'serial_number', 'type', 'manufacturer', 'model', 'os', 'user_id', 'mac_addr_wifi', 'mac_addr_eth', 'key_type') {
-    Write-Host ('{0,-15} {1}' -f $k, $hw[$k])
-}
-Write-Host ('{0,-15} {1}' -f 'programs', $softwareRows.Count)
+foreach ($k in $summary.Keys) { Write-Host ('{0,-15} {1}' -f $k, $summary[$k]) }
+$footer = "Salvo em $finalDir"
 if ($script:Warnings.Count) {
     Write-Host ('{0} warning(s), see {1}' -f $script:Warnings.Count, (Join-Path $finalDir 'run.log')) -ForegroundColor Yellow
+    $footer += [Environment]::NewLine + ('{0} aviso(s), veja run.log' -f $script:Warnings.Count)
 }
 Write-Host "Saved in $finalDir"
+Show-Result -Heading ([regex]::Unescape('Aquisi\u00e7\u00e3o conclu\u00edda')) -Rows $summary -Footer $footer
 exit 0
